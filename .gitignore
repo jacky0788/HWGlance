@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+build/
+
+# 執行時資料（log、探測結果、WebView 快取、執行中的埠）
+data/
+
+# 從官方 release 解出來的 LibreHardwareMonitor（scripts/fetch_lhm.py 會重建）
+vendor/lhm/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 編輯器
+.vscode/
+.idea/

@@ -1,0 +1,58 @@
+/*
+ * 設計 token：顏色、字級。全站的視覺只在這裡調整，元件裡不寫死顏色。
+ *
+ * 單位規則（tests/test_consistency.py 會檢查）：
+ *   寬度用 % 或 fr；字級、間距、圓角用 rem／em（跟著根字級縮放）；不用 px，只有 1px 細線例外。
+ *   根字級隨視窗寬度在約 14～17 像素之間流動，整個畫面跟著視窗大小一起縮放。
+ *
+ * 跟著 Windows 的深淺色。深色是主要設計（參考 CAM 的深色儀表板）；ui.py 的 BACKGROUND 要跟 --bg 一樣。
+ * 溫度等級三色：--ok（正常）、--warm（偏高）、--hot（過熱），--none 是讀不到。
+ */
+:root {
+  font-size: clamp(0.875rem, 0.3125vw + 0.6875rem, 1.0625rem);
+  color-scheme: light dark;
+
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --fg: #151820;
+  --fg-muted: #4d5462;
+  --fg-subtle: #6b7280;
+  --border: #e1e4ea;
+  --border-strong: #c8cdd6;
+  --accent: #0b74b8;
+  --track: #e3e6ec;
+  --focus: #378add;
+
+  --ok: #0d8a5f;
+  --ok-soft: #e3f5ee;
+  --warm: #a86200;
+  --warm-soft: #fcf0dc;
+  --hot: #c42b2b;
+  --hot-soft: #fbe6e6;
+  --none: #9aa1ad;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --surface-2: #1e222b;
+    --fg: #e9ecf2;
+    --fg-muted: #aab1be;
+    --fg-subtle: #7d8593;
+    --border: #262b35;
+    --border-strong: #353b47;
+    --accent: #56b6f0;
+    --track: #262b35;
+    --focus: #56b6f0;
+
+    --ok: #3ddc97;
+    --ok-soft: #0f2e22;
+    --warm: #f5b544;
+    --warm-soft: #33260b;
+    --hot: #ff6b6b;
+    --hot-soft: #3a1515;
+    --none: #5f6673;
+  }
+}

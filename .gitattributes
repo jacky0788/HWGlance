@@ -1,0 +1,2 @@
+# Windows 批次檔一定要 CRLF：cmd.exe 讀 LF 的 .bat 時，goto 與標籤會錯亂
+*.bat text eol=crlf

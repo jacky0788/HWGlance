@@ -1,0 +1,63 @@
+"""溫度等級：正常（ok）／偏高（warm）／過熱（hot）。門檻依硬體種類不同，單位 °C，到達就算。
+
+數字的依據（2026-10-29 定，之後設定頁可以改）：
+- CPU：Ryzen 5000 的 Tjmax 是 90°C，到了會降頻；80 以上算偏高。
+- GPU 核心：RTX 50 系列大約 88°C 開始降頻。熱點、顯存本來就比核心高 10～20°C，門檻另外算。
+- 硬碟：NVMe／SATA SSD 70°C 左右開始降速；機械硬碟超過 45°C 就不理想。
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class Band:
+    warm: float
+    hot: float
+
+
+DEFAULTS: dict[str, Band] = {
+    "cpu": Band(80, 90),
+    "gpu": Band(80, 88),
+    "gpu_hotspot": Band(95, 105),
+    "gpu_memory": Band(95, 105),
+    "board": Band(50, 65),
+    "chipset": Band(70, 80),
+    "vrm": Band(85, 100),
+    "nvme": Band(55, 70),
+    "ssd": Band(55, 70),
+    "hdd": Band(45, 55),
+    "dimm": Band(60, 75),
+    "liquid": Band(40, 45),
+    "psu": Band(60, 75),
+    "other": Band(70, 85),
+}
+
+
+# 設定頁上的名稱與順序
+LABELS: dict[str, str] = {
+    "cpu": "CPU",
+    "gpu": "GPU 核心",
+    "gpu_hotspot": "GPU 熱點",
+    "gpu_memory": "GPU 顯存",
+    "board": "主機板",
+    "chipset": "晶片組",
+    "vrm": "供電（VRM）",
+    "nvme": "NVMe SSD",
+    "ssd": "SATA SSD",
+    "hdd": "機械硬碟",
+    "dimm": "記憶體（DIMM）",
+    "liquid": "水溫",
+    "psu": "電源",
+    "other": "其他",
+}
+
+
+def level(value: float | None, band: Band) -> str:
+    if value is None:
+        return "none"
+    if value >= band.hot:
+        return "hot"
+    if value >= band.warm:
+        return "warm"
+    return "ok"
