@@ -16,8 +16,8 @@ function TempTile({ tile, onPick }: { tile: Tile; onPick: (deviceId: string) => 
   return (
     <button type="button" onClick={() => onPick(tile.device)}
       title={`${tile.label}（${tile.sub}）：${tempExact(tile.value, unit)}，開啟以來最高 ${tempExact(tile.max, unit)}`}
-      className={`kind-${tile.kind} kind-frame level-${tile.level} relative min-w-0 text-left rounded-xl border bg-surface pl-3.5 pr-3 py-2.5 cursor-pointer transition-colors`}>
-      <span aria-hidden className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-(--level)" />
+      className={`kind-${tile.kind} level-${tile.level} relative min-w-0 text-left rounded-xl border border-line bg-surface pl-3.5 pr-3 py-2.5 cursor-pointer hover:border-line-strong transition-colors`}>
+      <span aria-hidden className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-(--deco)" />
       <span className="block text-xs text-fg-muted truncate">{tile.label}</span>
       <span className="flex items-baseline justify-between gap-2">
         <span className="text-2xl font-semibold num leading-tight text-(--level)">{temp(tile.value, unit)}</span>

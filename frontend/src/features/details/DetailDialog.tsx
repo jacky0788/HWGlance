@@ -67,7 +67,7 @@ function Bars({ bars }: { bars: DetailBars }) {
               <span className="num">{number(item.value)}{bars.unit}</span>
             </div>
             <div className="mt-1 h-1.5 rounded-full bg-track overflow-hidden">
-              <div className="h-full rounded-full bg-accent transition-[width] duration-500"
+              <div className="h-full rounded-full bg-(--kind) transition-[width] duration-500"
                 style={{ width: `${Math.min(100, Math.max(0, ((item.value ?? 0) / bars.max) * 100))}%` }} />
             </div>
           </li>
@@ -180,10 +180,10 @@ export function DetailDialog({ deviceId, device, interval, onClose }: {
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose(); // 點視窗外面（背景）關掉
       }}
-      className={`kind-${kind} m-auto w-[min(46rem,94vw)] max-h-[90vh] rounded-2xl border kind-frame bg-surface text-fg p-0 backdrop:bg-black/50`}>
+      className={`kind-${kind} m-auto w-[min(46rem,94vw)] max-h-[90vh] rounded-2xl border border-line bg-surface text-fg p-0 backdrop:bg-black/50`}>
       <div className="flex max-h-[90vh] flex-col">
         <header className="flex items-center gap-3 px-5 pt-4 pb-3 border-b border-line">
-          <Icon className="size-5 shrink-0 text-fg-subtle" aria-hidden />
+          <Icon className="size-5 shrink-0 text-(--kind)" aria-hidden />
           <div className="min-w-0">
             <h2 id="detail-title" className="m-0 text-base font-semibold truncate" title={title}>{title}</h2>
             {sub ? <p className="m-0 text-xs text-fg-subtle truncate">{sub}</p> : null}

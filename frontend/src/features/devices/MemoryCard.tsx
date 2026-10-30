@@ -15,7 +15,7 @@ export function MemoryCard({ device, onOpen }: { device: Device; onOpen: (id: st
         <>
           <div className="h-2 rounded-full bg-track overflow-hidden" role="meter" aria-valuemin={0}
             aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label="記憶體使用率">
-            <div className="h-full rounded-full bg-accent transition-[width] duration-500"
+            <div className="h-full rounded-full bg-(--kind) transition-[width] duration-500"
               style={{ width: `${Math.min(100, percent)}%` }} />
           </div>
           <p className="mt-2 mb-0 flex justify-between text-sm num">

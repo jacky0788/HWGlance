@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import type { Kind } from "../types";
 
 interface Props {
-  kind: Kind; // 決定外框的種類色
+  kind: Kind; // 種類色：圖示、儀表、走勢（溫度數字不受影響）
   icon: LucideIcon;
   title: string;
   sub?: string;
@@ -17,9 +17,9 @@ interface Props {
 export function Card({ kind, icon: Icon, title, sub, onOpen, children }: Props) {
   return (
     <section onClick={onOpen}
-      className={`kind-${kind} kind-frame rounded-2xl border bg-surface p-4 min-w-0 ${onOpen ? "cursor-pointer transition-colors" : ""}`}>
+      className={`kind-${kind} rounded-2xl border border-line bg-surface p-4 min-w-0 ${onOpen ? "cursor-pointer hover:border-line-strong transition-colors" : ""}`}>
       <header className="flex items-center gap-2 mb-3 min-w-0">
-        <Icon className="size-4 shrink-0 text-fg-subtle" aria-hidden />
+        <Icon className="size-4 shrink-0 text-(--kind)" aria-hidden />
         <h3 className="m-0 text-sm font-semibold truncate" title={title}>{title}</h3>
         {sub ? <span className="text-xs text-fg-subtle truncate">{sub}</span> : null}
         {onOpen ? (

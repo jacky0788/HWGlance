@@ -76,30 +76,28 @@ body {
   --kind: var(--kind-other);
 }
 
-/* 種類色只用在外框（磚塊、卡片、詳細視窗、迷你格子）；溫度的顏色一律照等級，不受種類影響 */
-.kind-frame {
-  border-color: color-mix(in srgb, var(--kind) 60%, var(--border));
-}
-.kind-frame:hover {
-  border-color: var(--kind);
-}
-
-/* 溫度等級：外層加 level-ok／-warm／-hot／-none，裡面用 var(--level)（Tailwind 寫 text-(--level)） */
+/* 溫度等級：外層加 level-ok／-warm／-hot／-none。
+   --level：溫度數字的顏色，一律照等級（綠／黃／紅），不受種類影響。
+   --deco：磚塊色條、儀表弧、走勢線這些裝飾，正常時用硬體種類色（外層有 kind-*），偏高、過熱才變黃、紅。 */
 .level-ok {
   --level: var(--ok);
   --level-soft: var(--ok-soft);
+  --deco: var(--kind, var(--ok));
 }
 .level-warm {
   --level: var(--warm);
   --level-soft: var(--warm-soft);
+  --deco: var(--warm);
 }
 .level-hot {
   --level: var(--hot);
   --level-soft: var(--hot-soft);
+  --deco: var(--hot);
 }
 .level-none {
   --level: var(--none);
   --level-soft: var(--surface-2);
+  --deco: var(--none);
 }
 
 /* 總覽磚塊：每塊最窄 8.5rem，放不下就換行 */
@@ -130,7 +128,7 @@ body {
 }
 .gauge-value {
   fill: none;
-  stroke: var(--level);
+  stroke: var(--deco);
   stroke-linecap: round;
   transition: stroke-dasharray 0.6s ease, stroke 0.3s ease;
 }

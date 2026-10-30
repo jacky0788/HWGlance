@@ -42,7 +42,7 @@ export function Sparkline({ values, level, minSpan = 10, label }: Props) {
     <figure className={`level-${level} m-0`}>
       <svg viewBox="0 0 100 24" preserveAspectRatio="none" className="block w-full h-8" role="img"
         aria-label={`${label}：最低 ${temp(lowest, unit)}、最高 ${temp(highest, unit)}`}>
-        <path d={d} fill="none" stroke="var(--level)" strokeWidth={1.5} vectorEffect="non-scaling-stroke"
+        <path d={d} fill="none" stroke="var(--deco)" strokeWidth={1.5} vectorEffect="non-scaling-stroke"
           strokeLinejoin="round" strokeLinecap="round" />
       </svg>
       <figcaption className="flex justify-between text-xs text-fg-subtle num">
