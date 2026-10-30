@@ -59,6 +59,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
    新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你視窗的內容變高 → `ui.py` 的 `MINI_SIZE`；
    詳細資訊的欄位（`details.py`）→ `types.ts` 的 `DeviceDetail`；規格的欄位（`lhm.specs`）→ `demo.specs` 要一樣。
 8. commit 不加 AI 署名；repo 自設身分 `HWGlance <jacky0788@users.noreply.github.com>`；使用者說要才 commit。
+   遠端是 GitHub 私人 repo `jacky0788/HWGlance`（2026-10-31 建立），使用者說要才 push。
 
 ## 怎麼跑
 
