@@ -76,11 +76,18 @@ body {
   --kind: var(--kind-other);
 }
 
-/* 溫度等級：外層加 level-ok／-warm／-hot／-none，裡面用 var(--level)（Tailwind 寫 text-(--level)）。
-   正常時用硬體種類色（外層有 kind-*），沒有種類的地方才用 --ok 綠色；偏高、過熱一律黃、紅。 */
+/* 種類色只用在外框（磚塊、卡片、詳細視窗、迷你格子）；溫度的顏色一律照等級，不受種類影響 */
+.kind-frame {
+  border-color: color-mix(in srgb, var(--kind) 60%, var(--border));
+}
+.kind-frame:hover {
+  border-color: var(--kind);
+}
+
+/* 溫度等級：外層加 level-ok／-warm／-hot／-none，裡面用 var(--level)（Tailwind 寫 text-(--level)） */
 .level-ok {
-  --level: var(--kind, var(--ok));
-  --level-soft: color-mix(in srgb, var(--kind, var(--ok)) 14%, transparent);
+  --level: var(--ok);
+  --level-soft: var(--ok-soft);
 }
 .level-warm {
   --level: var(--warm);
