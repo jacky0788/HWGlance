@@ -1,10 +1,54 @@
-"""這台 Windows 的狀態：是不是系統管理員、PawnIO 裝了沒。只讀，不改任何東西。"""
+"""這台 Windows 的狀態：是不是系統管理員、PawnIO 裝了沒、CPU 快取多大。只讀，不改任何東西。"""
 from __future__ import annotations
 
 import ctypes
 import sys
+from collections.abc import Iterable
 
 PAWNIO_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO"
+RELATION_CACHE = 2                          # LOGICAL_PROCESSOR_RELATIONSHIP 的 RelationCache
+
+
+class _CacheDescriptor(ctypes.Structure):
+    _fields_ = [("Level", ctypes.c_ubyte), ("Associativity", ctypes.c_ubyte), ("LineSize", ctypes.c_ushort),
+                ("Size", ctypes.c_uint32), ("Type", ctypes.c_int)]
+
+
+class _ProcessorInfo(ctypes.Union):
+    _fields_ = [("Flags", ctypes.c_ubyte), ("NodeNumber", ctypes.c_uint32), ("Cache", _CacheDescriptor),
+                ("Reserved", ctypes.c_ulonglong * 2)]
+
+
+class _LogicalProcessorInformation(ctypes.Structure):
+    _fields_ = [("ProcessorMask", ctypes.c_size_t), ("Relationship", ctypes.c_int), ("Info", _ProcessorInfo)]
+
+
+def cpu_caches() -> dict[int, int]:
+    """每一層快取的總大小（位元組），例如 {1: 524288, 2: 4194304, 3: 33554432}。
+    用 Windows 的 GetLogicalProcessorInformation（不用系統管理員）；SMBIOS 的數字有時不準（這台 L3 報 32.5 MB）。"""
+    if sys.platform != "win32":
+        return {}
+    try:
+        get = ctypes.windll.kernel32.GetLogicalProcessorInformation
+        length = ctypes.c_uint32(0)
+        get(None, ctypes.byref(length))
+        count = length.value // ctypes.sizeof(_LogicalProcessorInformation)
+        if count <= 0:
+            return {}
+        items = (_LogicalProcessorInformation * count)()
+        if not get(items, ctypes.byref(length)):
+            return {}
+    except (AttributeError, OSError):
+        return {}
+    return cache_totals((i.Info.Cache.Level, i.Info.Cache.Size) for i in items if i.Relationship == RELATION_CACHE)
+
+
+def cache_totals(caches: Iterable[tuple[int, int]]) -> dict[int, int]:
+    """(層級, 大小) → 每層加總。每筆是一顆實體快取（L1 的指令、資料各算一筆）。"""
+    totals: dict[int, int] = {}
+    for lvl, size in caches:
+        totals[lvl] = totals.get(lvl, 0) + size
+    return dict(sorted(totals.items()))
 
 
 def is_admin() -> bool:

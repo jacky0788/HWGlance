@@ -20,8 +20,9 @@ def sensor(hw_id: str, kind: str, index: int, name: str, value: float | None,
 
 
 def machine_tree() -> list[RawHardware]:
-    """照這台電腦（Ryzen 7 5800X、RTX 5070 Ti、TUF X570、兩顆 NVMe＋SATA SSD＋HDD）寫的固定讀數。
-    刻意放了：沒接的風扇、Super I/O 的垃圾通道、NVMe 的門檻值、不認得的硬體種類。"""
+    """以這台電腦（Ryzen 7 5800X、RTX 5070 Ti、TUF X570、兩顆 NVMe＋SATA SSD＋HDD）為底的固定讀數。
+    刻意放了：沒接的風扇、Super I/O 的垃圾通道、NVMe 的門檻值、不認得的硬體種類、GPU 熱點（RTX 50 其實沒有，
+    舊顯卡有）。編號與數值不一定跟真機一樣；真機的樣子看 DemoSource（照 2026-10-31 的 probe）。"""
     cpu = "/amdcpu/0"
     gpu = "/gpu-nvidia/0"
     lpc = "/lpc/nct6798d/0"

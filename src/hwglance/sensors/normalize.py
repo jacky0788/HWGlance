@@ -36,8 +36,6 @@ VALID_TEMP = (-40.0, 125.0)
 STORAGE_LIMITS = frozenset({"Warning Temperature", "Critical Temperature"})
 
 CPU_HEADLINE = ("Core (Tctl/Tdie)", "Core (Tdie)", "Core (Tctl)", "CPU Package", "Core Max", "Core Average")
-CPU_TILE_SUB = {"Core (Tctl/Tdie)": "Tctl/Tdie", "Core (Tdie)": "Tdie", "Core (Tctl)": "Tctl",
-                "CPU Package": "封裝", "Core Max": "核心最高", "Core Average": "核心平均"}
 GPU_TILES = (("GPU Core", "GPU 核心"), ("GPU Hot Spot", "GPU 熱點"))
 # 主機板上哪些溫度放進總覽：(LHM 名稱, 磚塊標題)；同一個標題只放一次
 BOARD_TILES = (("Motherboard", "主機板"), ("System", "主機板"), ("Chipset", "晶片組"), ("PCH", "晶片組"),
@@ -64,18 +62,19 @@ def _find(hw: RawHardware, sensor_type: str, *names: str) -> RawSensor | None:
     return None
 
 
-def _valid_temp(s: RawSensor) -> bool:
+def valid_temp(s: RawSensor) -> bool:
     if s.value is None:
         return s.max is not None and VALID_TEMP[0] < s.max < VALID_TEMP[1]
     return VALID_TEMP[0] < s.value < VALID_TEMP[1]
 
 
+def shown_min(s: RawSensor) -> float | None:
+    """LHM 讀到硬碟 SMART 之前是 0，這個 0 會一直留在最低值（2026-10-31 真機）；電腦零件不會到 0°C 以下。"""
+    return s.min if s.min is not None and s.min > 0 else None
+
+
 def short_gpu(name: str) -> str:
     return re.sub(r"\b(NVIDIA|GeForce|AMD|Radeon|Intel\(R\)|Intel)\s+", "", name).strip() or name
-
-
-def short_chip(name: str) -> str:
-    return re.sub(r"^(Nuvoton|ITE|Fintek|Winbond|SMSC)\s+", "", name).strip() or name
 
 
 def short_drive(model: str) -> str:
@@ -90,6 +89,27 @@ def clean_cpu(name: str) -> str:
     return re.sub(r"\s{2,}", " ", name).strip()
 
 
+def short_cpu(name: str) -> str:
+    """總覽磚塊的小字：AMD Ryzen 7 5800X → Ryzen 7 5800X。"""
+    name = clean_cpu(name)
+    return re.sub(r"^(AMD|Intel)\s+", "", name) or name
+
+
+def short_board(name: str) -> str:
+    """ASUS TUF GAMING X570-PLUS (WI-FI) → TUF X570-PLUS（拿掉廠牌、括號裡的版本與 GAMING，磚塊放得下）。"""
+    name = re.sub(r"\s*\([^)]*\)\s*$", "", name.strip())
+    name = re.sub(r"^(ASUSTeK COMPUTER INC\.|ASUS|MSI|Micro-Star International Co\., Ltd\.|"
+                  r"Gigabyte Technology Co\., Ltd\.|GIGABYTE|ASRock|BIOSTAR)\s+", "", name, flags=re.I)
+    short = re.sub(r"\s+", " ", re.sub(r"\bGAMING\b", "", name, flags=re.I)).strip()
+    return short or name.strip() or name
+
+
+def chipset_of(board: str) -> str | None:
+    """從主機板型號抓晶片組：TUF GAMING X570-PLUS → X570；認不出來（例如 A520M）就 None。"""
+    m = re.search(r"(?<![A-Za-z0-9])([ABHXZ]\d{3}E?)(?![A-Za-z0-9])", board)
+    return m.group(1) if m else None
+
+
 class _Device:
     def __init__(self, hw: RawHardware, kind: str, bands: dict[str, Band], name: str | None = None,
                  sub: str = "") -> None:
@@ -100,11 +120,11 @@ class _Device:
         self._tile_labels: set[str] = set()
 
     def temp(self, s: RawSensor, role: str) -> dict | None:
-        if not _valid_temp(s):
+        if not valid_temp(s):
             return None
         band = self.bands.get(role, self.bands["other"])
         t = {"id": s.id, "name": s.name, "label": label(s.type, s.name), "role": role,
-             "value": _round(s.value), "min": _round(s.min), "max": _round(s.max),
+             "value": _round(s.value), "min": _round(shown_min(s)), "max": _round(s.max),
              "level": level(s.value, band)}
         self.data["temps"].append(t)
         return t
@@ -159,10 +179,14 @@ class _Device:
 
 def _cpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     dev = _Device(hw, "cpu", bands, name=clean_cpu(hw.name))
-    temps = {s.name: t for s in _of(hw, "Temperature") if (t := dev.temp(s, "cpu"))}
+    sensors = _of(hw, "Temperature")
+    if any(s.name in CPU_HEADLINE and valid_temp(s) for s in sensors):
+        # AMD 的 CCD 溫度是瞬間值，真機每秒在 48～78°C 之間跳（2026-10-31）；有平滑過的 Tctl/Tdie 就不列
+        sensors = [s for s in sensors if not s.name.startswith("CCD")]
+    temps = {s.name: t for s in sensors if (t := dev.temp(s, "cpu"))}
     head = next((temps[n] for n in CPU_HEADLINE if n in temps), None)
     if head is not None:
-        dev.tile(head, "CPU", CPU_TILE_SUB.get(head["name"], head["label"]))
+        dev.tile(head, "CPU", short_cpu(hw.name))
         dev.headline(head)
     load = _find(hw, "Load", "CPU Total")
     dev.stat("load", "負載", load and load.value, "%")
@@ -219,19 +243,18 @@ def _board_role(name: str) -> str:
 
 def _board(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     parts = [p for p in hw.walk() if p is not hw] if hw.type == "Motherboard" else [hw]
-    sub = "、".join(short_chip(p.name) for p in parts)
-    dev = _Device(hw, "board", bands, sub=sub)
-    found: dict[str, tuple[dict, RawHardware]] = {}
+    dev = _Device(hw, "board", bands)            # 感測晶片的代號（NCT6798D）只放在詳細資訊，卡片上不寫
+    found: dict[str, dict] = {}
     for part in [hw, *parts] if hw.type == "Motherboard" else parts:
         for s in _of(part, "Temperature"):
             if t := dev.temp(s, _board_role(s.name)):
-                found.setdefault(s.name, (t, part))
+                found.setdefault(s.name, t)
         dev.fans_of(part)
+    board = short_board(hw.name)
     for name, title in BOARD_TILES:
         if name in found:
-            t, part = found[name]
-            dev.tile(t, title, short_chip(part.name))
-    dev.headline(found["Motherboard"][0] if "Motherboard" in found else None)
+            dev.tile(found[name], title, (chipset_of(board) or board) if title == "晶片組" else board)
+    dev.headline(found.get("Motherboard"))
     return dev
 
 

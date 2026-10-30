@@ -6,10 +6,10 @@ import type { Device } from "../../types";
 
 const ICONS = { board: CircuitBoard, cooler: Droplets, psu: Zap } as const;
 
-export function BoardCard({ device }: { device: Device }) {
+export function BoardCard({ device, onOpen }: { device: Device; onOpen: (id: string) => void }) {
   const icon = ICONS[device.kind as keyof typeof ICONS] ?? Thermometer;
   return (
-    <Card anchor={device.id} icon={icon} title={device.name} sub={device.sub}>
+    <Card kind={device.kind} icon={icon} title={device.name} sub={device.sub} onOpen={() => onOpen(device.id)}>
       {device.temps.length > 0 ? (
         <ul className="m-0 p-0 list-none">{device.temps.map((t) => <TempRow key={t.id} t={t} />)}</ul>
       ) : (

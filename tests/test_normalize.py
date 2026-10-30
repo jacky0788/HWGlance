@@ -3,8 +3,8 @@ from __future__ import annotations
 from conftest import sensor
 
 from hwglance.sensors.model import RawHardware
-from hwglance.sensors.normalize import (clean_cpu, history_values, normalize, short_chip, short_drive,
-                                        short_gpu)
+from hwglance.sensors.normalize import (chipset_of, clean_cpu, history_values, normalize, short_board, short_cpu,
+                                        short_drive, short_gpu)
 from hwglance.sensors.thresholds import Band
 
 
@@ -19,9 +19,9 @@ def test_overview_has_every_important_temperature(tree):
                       "KIOXIA-EXCERIA G2", "KINGSTON SA2000M8500G", "CT1000MX500", "TOSHIBA DT02ABA400",
                       "WireView Pro"]
     cpu = snap["overview"][0]
-    assert cpu["sub"] == "Tctl/Tdie" and cpu["value"] == 85.2 and cpu["max"] == 88.0
+    assert cpu["sub"] == "Ryzen 7 5800X" and cpu["value"] == 85.2 and cpu["max"] == 88.0
     assert snap["overview"][1]["sub"] == "RTX 5070 Ti"
-    assert snap["overview"][3]["sub"] == "NCT6798D"
+    assert [t["sub"] for t in snap["overview"][3:5]] == ["TUF X570-PLUS", "X570"]   # 主機板、晶片組
     assert [t["sub"] for t in snap["overview"][5:9]] == ["NVMe", "NVMe", "SATA SSD", "HDD"]
 
 
@@ -30,9 +30,20 @@ def test_levels_follow_each_kind(tree):
     assert levels["CPU"] == "warm"                     # 85：CPU 80 起偏高、90 過熱
     assert levels["GPU 核心"] == "ok"                  # 70
     assert levels["GPU 熱點"] == "ok"                  # 熱點的門檻比核心高
-    assert levels["KINGSTON SA2000M8500G"] == "warm"   # 56：SSD 55 起偏高
+    assert levels["KINGSTON SA2000M8500G"] == "ok"     # 56：NVMe 60 起偏高
     assert levels["TOSHIBA DT02ABA400"] == "warm"      # 47：機械硬碟 45 起偏高
     assert levels["CT1000MX500"] == "ok"
+
+
+def test_real_idle_readings_are_not_flagged():
+    # 2026-10-31 真機閒置：晶片組 78°C、KIOXIA 57°C。使用者決定這樣算正常（晶片組 80、NVMe 60 起偏高）
+    board = RawHardware("/motherboard", "ASUS TUF GAMING X570-PLUS (WI-FI)", "Motherboard", [], [
+        RawHardware("/lpc/nct6798d/0", "Nuvoton NCT6798D", "SuperIO", [
+            sensor("/lpc/nct6798d/0", "Temperature", 10, "Chipset", 78.0)])])
+    disk = RawHardware("/nvme/5", "KIOXIA-EXCERIA G2 SSD", "Storage", [
+        sensor("/nvme/5", "Temperature", 0, "Composite Temperature", 57.0)])
+    levels = {t["label"]: t["level"] for t in normalize([board, disk])["overview"]}
+    assert levels == {"晶片組": "ok", "KIOXIA-EXCERIA G2": "ok"}
 
 
 def test_custom_bands_override_defaults(tree):
@@ -51,9 +62,17 @@ def test_cpu_card(tree):
     cpu = by_kind(normalize(tree), "cpu")[0]
     assert cpu["name"] == "AMD Ryzen 7 5800X"
     assert cpu["headline"] == "/amdcpu/0/temperature/2"
-    assert [t["label"] for t in cpu["temps"]] == ["核心 Tctl/Tdie", "CCD1"]
+    assert [t["label"] for t in cpu["temps"]] == ["核心 Tctl/Tdie"]     # CCD 的瞬間值不列
     stats = {s["key"]: (s["value"], s["unit"]) for s in cpu["stats"]}
     assert stats == {"load": (64, "%"), "clock": (4452, "MHz"), "power": (119, "W")}
+
+
+def test_ccd_temperatures_are_kept_only_without_tctl():
+    cpu = "/amdcpu/0"
+    hw = RawHardware(cpu, "AMD Ryzen 9 5950X", "Cpu", [
+        sensor(cpu, "Temperature", 3, "CCD1 (Tdie)", 61.0), sensor(cpu, "Temperature", 4, "CCD2 (Tdie)", 58.0)])
+    temps = by_kind(normalize([hw]), "cpu")[0]["temps"]
+    assert [t["label"] for t in temps] == ["CCD1", "CCD2"]
 
 
 def test_gpu_card(tree):
@@ -68,7 +87,7 @@ def test_gpu_card(tree):
 
 def test_board_lists_fans_that_spin_and_skips_junk_channels(tree):
     board = by_kind(normalize(tree), "board")[0]
-    assert board["name"] == "ASUS TUF GAMING X570-PLUS (WI-FI)" and board["sub"] == "NCT6798D"
+    assert board["name"] == "ASUS TUF GAMING X570-PLUS (WI-FI)" and board["sub"] == ""   # 晶片代號只在詳細資訊
     assert [t["label"] for t in board["temps"]] == ["CPU（主機板量）", "主機板", "晶片組"]
     assert {t["label"]: t["role"] for t in board["temps"]}["晶片組"] == "chipset"
     assert [f["label"] for f in board["fans"]] == ["CPU 風扇", "機殼風扇 1", "機殼風扇 2", "晶片組風扇"]
@@ -83,6 +102,13 @@ def test_storage_limits_are_not_readings(tree):
     assert kioxia["media"] == "nvme"
     stats = {s["key"]: s for s in kioxia["stats"]}
     assert stats["used"]["value"] == 61 and stats["free"]["total"] == 1863
+
+
+def test_zero_minimum_from_before_the_first_smart_read_is_dropped():
+    disk = RawHardware("/ssd/0", "CT1000MX500SSD1", "Storage", [
+        sensor("/ssd/0", "Temperature", 0, "Temperature", 27.0, 0.0, 27.0)])   # 真機 LHM 的樣子
+    temp = normalize([disk])["devices"][0]["temps"][0]
+    assert temp["min"] is None and temp["max"] == 27.0
 
 
 def test_memory_card(tree):
@@ -131,7 +157,12 @@ def test_history_values(tree):
 def test_name_cleanup():
     assert short_gpu("NVIDIA GeForce RTX 5070 Ti") == "RTX 5070 Ti"
     assert short_gpu("AMD Radeon RX 7800 XT") == "RX 7800 XT"
-    assert short_chip("Nuvoton NCT6798D") == "NCT6798D" and short_chip("ITE IT8689E") == "IT8689E"
+    assert short_cpu("AMD Ryzen 7 5800X 8-Core Processor") == "Ryzen 7 5800X"
+    assert short_board("ASUS TUF GAMING X570-PLUS (WI-FI)") == "TUF X570-PLUS"
+    assert short_board("ASUS ROG STRIX B550-F GAMING") == "ROG STRIX B550-F"
+    assert short_board("Micro-Star International Co., Ltd. MAG B550 TOMAHAWK (MS-7C91)") == "MAG B550 TOMAHAWK"
+    assert chipset_of("TUF GAMING X570-PLUS") == "X570" and chipset_of("ROG STRIX X670E-E GAMING") == "X670E"
+    assert chipset_of("A520M-A PRO") is None                     # A520M 的 M 是板型，不猜
     assert short_drive("KIOXIA-EXCERIA G2 SSD") == "KIOXIA-EXCERIA G2"
     assert short_drive("CT500MX500SSD1") == "CT500MX500"
     assert short_drive("ST20000DM001-3Y3103") == "ST20000DM001-3Y3103"

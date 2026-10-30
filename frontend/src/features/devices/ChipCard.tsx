@@ -7,12 +7,12 @@ import { TempGauge } from "../../components/TempGauge";
 import type { Series } from "../../lib/useHistory";
 import type { Device } from "../../types";
 
-export function ChipCard({ device, series }: { device: Device; series: Series }) {
+export function ChipCard({ device, series, onOpen }: { device: Device; series: Series; onOpen: (id: string) => void }) {
   const head = device.temps.find((t) => t.id === device.headline) ?? null;
   const others = device.temps.filter((t) => t !== head);
   const isCpu = device.kind === "cpu";
   return (
-    <Card anchor={device.id} icon={isCpu ? Cpu : Gpu} title={device.name}>
+    <Card kind={device.kind} icon={isCpu ? Cpu : Gpu} title={device.name} onOpen={() => onOpen(device.id)}>
       <div className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)] gap-4 items-center">
         <TempGauge value={head?.value ?? null} level={head?.level ?? "none"} label={isCpu ? "CPU" : "GPU"} />
         <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">

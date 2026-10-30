@@ -16,7 +16,7 @@ function loadOf(devices: Device[], kind: string): number | null {
 function Cell({ title, tile, load }: { title: string; tile: Tile | undefined; load: number | null }) {
   const unit = useUnit();
   return (
-    <div className={`level-${tile?.level ?? "none"} min-w-0 rounded-xl border border-line bg-surface px-3 py-1.5`}>
+    <div className={`kind-${tile?.kind ?? "other"} level-${tile?.level ?? "none"} min-w-0 rounded-xl border border-line bg-surface px-3 py-1.5`}>
       <div className="flex items-baseline justify-between text-xs text-fg-subtle">
         <span>{title}</span>
         {load != null ? <span className="num">負載 {Math.round(load)}%</span> : null}

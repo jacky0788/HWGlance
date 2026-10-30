@@ -4,6 +4,12 @@ import type { Kind, Stat, Unit } from "../types";
 
 const int = new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 });
 const one = new Intl.NumberFormat("zh-TW", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const plain = new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 3 });
+
+// 詳細資訊的數字：後端已經取好位數，這裡只加千分位（25836 → 25,836）
+export function number(v: number | null | undefined): string {
+  return v == null ? "—" : plain.format(v);
+}
 
 export function toUnit(celsius: number, unit: Unit): number {
   return unit === "F" ? (celsius * 9) / 5 + 32 : celsius;

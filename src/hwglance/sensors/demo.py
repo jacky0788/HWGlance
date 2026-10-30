@@ -1,6 +1,8 @@
-"""示範資料：照這台電腦的硬體（Ryzen 7 5800X、RTX 5070 Ti、TUF GAMING X570-PLUS、6 顆硬碟）模擬讀數。
+"""示範資料：照這台電腦（Ryzen 7 5800X、RTX 5070 Ti、TUF GAMING X570-PLUS、6 顆硬碟）模擬讀數。
 
-硬體與感測器的名稱、Identifier 都跟 LHM v0.9.6 一樣，所以後面的整理流程跟真的完全相同。
+硬體與感測器的名稱、Identifier、排列順序都照 2026-10-31 在這台跑的 probe（LHM v0.9.6），
+所以後面的整理流程跟真的完全相同。數值也取真機附近：晶片組平常就 75～80°C、KIOXIA 閒置也有 55°C 上下、
+RTX 50 系列沒有熱點溫度、CCD 溫度每秒亂跳。規格（specs）照同一天的 LHM 報告與 HWMonitor 報告。
 負載在閒置與高負載之間交替（像開遊戲、關遊戲），溫度用一階延遲慢慢追，像真的散熱一樣。
 開發介面（python -m hwglance --serve --demo）與測試用。
 """
@@ -13,24 +15,42 @@ from collections.abc import Callable
 
 from .model import RawHardware, RawSensor
 
-# (Identifier, 型號, 閒置溫度, 高負載時多幾度, 已用 %, 總容量 GB)
+# (Identifier, 型號, 閒置溫度, 高負載時多幾度, 已用 %, 總容量 GB)；順序與編號照真機（LHM 用實體磁碟編號）
 DRIVES = (
-    ("/nvme/0", "KIOXIA-EXCERIA G2 SSD", 40.0, 8.0, 61.0, 1863.0),
-    ("/nvme/1", "KINGSTON SA2000M8500G", 47.0, 9.0, 83.0, 465.0),
-    ("/ssd/2", "CT1000MX500SSD1", 33.0, 3.0, 47.0, 931.0),
-    ("/ssd/3", "CT500MX500SSD1", 32.0, 3.0, 72.0, 465.0),
-    ("/hdd/4", "TOSHIBA DT02ABA400", 37.0, 2.0, 88.0, 3726.0),
-    ("/hdd/5", "ST20000DM001-3Y3103", 39.0, 2.0, 64.0, 18626.0),
+    ("/nvme/5", "KIOXIA-EXCERIA G2 SSD", 55.0, 6.0, 44.4, 2000.4),
+    ("/nvme/4", "KINGSTON SA2000M8500G", 40.0, 8.0, 56.8, 500.1),
+    ("/ssd/0", "CT1000MX500SSD1", 27.0, 3.0, 53.5, 1000.2),
+    ("/hdd/3", "TOSHIBA DT02ABA400", 29.0, 2.0, 48.0, 4000.8),
+    ("/hdd/1", "ST20000DM001-3Y3103", 37.0, 2.0, 36.1, 20000.6),
+    ("/ssd/2", "CT500MX500SSD1", 37.0, 3.0, 40.4, 500.1),
 )
-BOARD_FANS = (  # (名稱, 閒置轉速, 高負載時多幾轉)；0 表示接頭沒接
-    ("CPU Fan", 720.0, 900.0),
-    ("CPU Optional Fan", 0.0, 0.0),
-    ("Chassis Fan #1", 850.0, 320.0),
-    ("Chassis Fan #2", 830.0, 300.0),
-    ("Chassis Fan #3", 0.0, 0.0),
-    ("Chipset Fan", 2250.0, 150.0),
-    ("AIO Pump", 0.0, 0.0),
+NVME_LIMITS = {"/nvme/5": (71.0, 89.0), "/nvme/4": (74.0, 79.0)}   # 硬碟自己回報的警告／危險溫度
+NVME_HEALTH = {"/nvme/5": (100.0, 5.0, 2.0), "/nvme/4": (100.0, 10.0, 18.0)}   # 備用空間、下限、已用壽命 %
+DRIVE_SMART = {  # (剩餘壽命 %, 總讀取 GB, 總寫入 GB, 通電次數, 通電時數)；None＝這種硬碟沒有
+    "/nvme/5": (98.0, 38351.0, 16868.0, 333.0, 3881.0),
+    "/nvme/4": (82.0, 68681.0, 60078.0, 1905.0, 25836.0),
+    "/ssd/0": (98.0, None, 7249.0, 553.0, 7679.0),
+    "/hdd/3": (None, None, None, 1575.0, 19476.0),
+    "/hdd/1": (None, None, None, 93.0, 1213.0),
+    "/ssd/2": (94.0, None, 6784.0, 1784.0, 12864.0),
+}
+DISK_INFO = {  # Windows（MSFT_PhysicalDisk）的資訊：(韌體, 介面, 轉速)；這兩顆機械硬碟 Windows 回報「不知道轉速」
+    "/nvme/5": ("ECFA17.1", "NVMe", None), "/nvme/4": ("S5Z42105", "NVMe", None),
+    "/ssd/0": ("M3CR046", "SATA", None), "/hdd/3": ("KQ000A", "SATA", None),
+    "/hdd/1": ("DN02", "SATA", None), "/ssd/2": ("M3CR023", "SATA", None),
+}
+BOARD_FANS = (  # (名稱, LHM 編號, 閒置轉速, 高負載時多幾轉, 全速轉速)；全速 0 表示接頭沒接
+    ("CPU Fan", 1, 1000.0, 650.0, 2160.0),
+    ("CPU Optional Fan", 6, 1490.0, 0.0, 1490.0),
+    ("Chassis Fan #1", 0, 1150.0, 300.0, 1800.0),
+    ("Chassis Fan #2", 2, 1350.0, 300.0, 2100.0),
+    ("Chassis Fan #3", 3, 0.0, 0.0, 0.0),
+    ("Chipset Fan", 4, 3600.0, 150.0, 5070.0),
+    ("AIO Pump", 5, 0.0, 0.0, 0.0),
 )
+BOARD_VOLTAGES = ((0, "Vcore", None), (1, "+5V", 5.04), (2, "AVSB", 3.408), (3, "+3.3V", 3.328), (4, "+12V", 12.192),
+                  (7, "+3V Standby", 3.408), (8, "CMOS Battery", 3.36), (9, "CPU Termination", 0.912))
+CORES, THREADS = 8, 16
 GPU_VRAM_MB = 16303.0
 RAM_GB = 63.9
 
@@ -54,12 +74,12 @@ class DemoSource:
         self._rng = random.Random(seed)
         self._clock = clock
         self._t0 = self._last = clock()
-        self._cpu = _Lag(42.0, 6.0)
-        self._gpu = _Lag(38.0, 14.0)
-        self._board = _Lag(35.0, 90.0)
-        self._chipset = _Lag(56.0, 60.0)
+        self._cpu = _Lag(52.0, 6.0)
+        self._gpu = _Lag(48.0, 14.0)
+        self._board = _Lag(44.0, 90.0)
+        self._chipset = _Lag(76.0, 60.0)
         self._drives = [_Lag(idle, 120.0) for _, _, idle, *_ in DRIVES]
-        self._extremes: dict[str, tuple[float, float]] = {}
+        self._extremes: dict[tuple[str, str], tuple[float, float]] = {}
         self._v: dict[str, float] = {}
         self.update()
 
@@ -68,6 +88,24 @@ class DemoSource:
 
     def close(self) -> None:
         pass
+
+    def specs(self) -> dict:
+        """規格：照這台 2026-10-31 的 SMBIOS（LHM 報告）與 Windows 的硬碟、顯示卡資訊（HWMonitor 報告）。"""
+        empty = {"maker": None, "part": None, "sizeMB": 0, "speed": None, "voltageMV": None, "type": None}
+        dimm = {"maker": "A-DATA", "part": "AX4U360032G18I-BWHD3", "sizeMB": 32768, "speed": 3600,
+                "voltageMV": 1200, "type": "DDR4"}
+        return {
+            "bios": {"vendor": "American Megatrends Inc.", "version": "5021", "date": "2024-09-29"},
+            "board": {"maker": "ASUSTeK COMPUTER INC.", "product": "TUF GAMING X570-PLUS (WI-FI)", "version": "Rev X.0x"},
+            "cpu": {"socket": "AM4", "cores": CORES, "threads": THREADS, "maxMHz": 4850},
+            "caches": {1: 512 * 1024, 2: 4 * 2**20, 3: 32 * 2**20},
+            "memory": [{"slot": "DIMM_A1", **empty}, {"slot": "DIMM_A2", **dimm},
+                       {"slot": "DIMM_B1", **empty}, {"slot": "DIMM_B2", **dimm}],
+            "disks": {hid.rsplit("/", 1)[-1]: {"model": model, "firmware": DISK_INFO[hid][0], "bus": DISK_INFO[hid][1],
+                                               "rpm": DISK_INFO[hid][2], "health": "healthy", "bytes": None}
+                      for hid, model, *_ in DRIVES},
+            "gpus": {"NVIDIA GeForce RTX 5070 Ti": {"driver": "610.88", "driverDate": "2026-07-22"}},
+        }
 
     def _busy(self, t: float, period: float, phase: float) -> float:
         """0～1 的負載，閒置與高負載交替，加一點雜訊。"""
@@ -88,10 +126,11 @@ class DemoSource:
         gpu_load = self._busy(t, 150.0, 0.02)
         v["cpu_load"] = cpu_load
         v["gpu_load"] = gpu_load
-        v["cpu"] = self._cpu.step(40.0 + 44.0 * cpu_load, dt) + self._noise(0.4)
-        v["gpu"] = self._gpu.step(36.0 + 36.0 * gpu_load, dt) + self._noise(0.2)
-        v["board"] = self._board.step(34.0 + 6.0 * cpu_load, dt)
-        v["chipset"] = self._chipset.step(55.0 + 5.0 * cpu_load, dt)
+        # Ryzen 一有負載就拉高時脈，溫度上得快（真機 30% 負載就 77°C），所以用開根號
+        v["cpu"] = self._cpu.step(48.0 + 38.0 * math.sqrt(cpu_load), dt) + self._noise(0.4)
+        v["gpu"] = self._gpu.step(48.0 + 26.0 * gpu_load, dt) + self._noise(0.2)
+        v["board"] = self._board.step(44.0 + 4.0 * cpu_load, dt)
+        v["chipset"] = self._chipset.step(76.0 + 4.0 * cpu_load, dt)
         if slow:
             for i, (_, _, idle, extra, *_rest) in enumerate(DRIVES):
                 v[f"drive{i}"] = self._drives[i].step(idle + extra * cpu_load, dt * 10)
@@ -100,103 +139,161 @@ class DemoSource:
         sid = f"{hw_id}/{kind.lower()}/{index}"
         if value is None:
             return RawSensor(sid, name, kind, None)
-        lo, hi = self._extremes.get(sid, (value, value))
+        key = (sid, name)                   # LHM 有重複的 Identifier（GPU Bus 與 GPU Memory），最高最低分開記
+        lo, hi = self._extremes.get(key, (value, value))
         lo, hi = min(lo, value), max(hi, value)
-        self._extremes[sid] = (lo, hi)
+        self._extremes[key] = (lo, hi)
         return RawSensor(sid, name, kind, value, lo, hi)
 
     def read(self) -> list[RawHardware]:
-        return [self._cpu_hw(), self._gpu_hw(), self._board_hw(), *self._memory_hw(), *self._drives_hw()]
+        # 順序照真機：主機板、CPU、記憶體、顯示卡、硬碟
+        return [self._board_hw(), self._cpu_hw(), *self._memory_hw(), self._gpu_hw(), *self._drives_hw()]
 
     def _cpu_hw(self) -> RawHardware:
         v, hid, s = self._v, "/amdcpu/0", self._sensor
         load = v["cpu_load"]
-        return RawHardware(hid, "AMD Ryzen 7 5800X", "Cpu", [
+        threads = [min(100.0, max(0.0, 100 * load + self._noise(18))) for _ in range(THREADS)]
+        sensors = [s(hid, "Load", 2 + i, f"CPU Core #{i + 1}", x) for i, x in enumerate(threads)]
+        clocks = [3600 + 1100 * min(1.0, load * 1.3) + self._noise(60) for _ in range(CORES)]
+        busy = [min(1.0, 0.1 + (threads[2 * c] + threads[2 * c + 1]) / 200) for c in range(CORES)]
+        sensors += [
+            s(hid, "Load", 0, "CPU Total", sum(threads) / THREADS),
+            s(hid, "Load", 1, "CPU Core Max", max(threads)),
+            s(hid, "Power", 0, "Package", 35 + 95 * math.sqrt(load) + self._noise(2)),
+            s(hid, "Clock", 1, "Cores (Average)", sum(clocks) / CORES),
+            s(hid, "Clock", 2, "Cores (Average Effective)", sum(c * b for c, b in zip(clocks, busy)) / CORES),
+        ]
+        for c in range(CORES):
+            sensors += [
+                s(hid, "Clock", 3 + 2 * c, f"Core #{c + 1}", clocks[c]),
+                s(hid, "Clock", 4 + 2 * c, f"Core #{c + 1} (Effective)", clocks[c] * busy[c]),
+                s(hid, "Factor", c, f"Core #{c + 1}", clocks[c] / 100),
+                s(hid, "Power", 1 + c, f"Core #{c + 1} (SMU)", max(0.5, 2 + 11 * load + self._noise(0.8))),
+                s(hid, "Voltage", 2 + c, f"Core #{c + 1} VID", 1.1 + 0.33 * load),
+            ]
+        sensors += [
             s(hid, "Temperature", 2, "Core (Tctl/Tdie)", v["cpu"]),
-            s(hid, "Temperature", 3, "CCD1 (Tdie)", v["cpu"] - 2.5),
-            s(hid, "Load", 0, "CPU Total", min(100.0, 100 * load + self._noise(2))),
-            s(hid, "Load", 1, "CPU Core Max", min(100.0, 100 * load + 12)),
-            s(hid, "Clock", 1, "Cores (Average)", 3600 + 1000 * min(1.0, load * 1.3) + self._noise(25)),
-            s(hid, "Power", 0, "Package", 32 + 90 * load + self._noise(2)),
+            # CCD 是瞬間值：負載低時常常比 Tctl 低一大截、每秒亂跳（真機 48～78°C）
+            s(hid, "Temperature", 3, "CCD1 (Tdie)", v["cpu"] - 2.0 - self._rng.uniform(0, 25 * (1 - load))),
             s(hid, "Voltage", 0, "Core (SVI2 TFN)", 1.0 + 0.35 * load),
-        ])
+            s(hid, "Voltage", 1, "SoC (SVI2 TFN)", 1.0875),
+            s(hid, "Clock", 0, "Bus Speed", 100.0),
+        ]
+        return RawHardware(hid, "AMD Ryzen 7 5800X", "Cpu", sensors)
 
     def _gpu_hw(self) -> RawHardware:
         v, hid, s = self._v, "/gpu-nvidia/0", self._sensor
         load, temp = v["gpu_load"], v["gpu"]
-        spinning = temp > 50 or load > 0.3          # 低溫時零轉速模式
-        rpm = 1000 + 1500 * load + self._noise(20) if spinning else 0.0
-        used = 2400 + 9600 * load
+        rpm = 600 + 1700 * load + self._noise(15)       # 真機閒置 50°C 時風扇也在轉（30%）
+        used = 5000 + 7000 * load
         return RawHardware(hid, "NVIDIA GeForce RTX 5070 Ti", "GpuNvidia", [
             s(hid, "Temperature", 0, "GPU Core", temp),
-            s(hid, "Temperature", 2, "GPU Hot Spot", temp + 8 + 6 * load),
-            s(hid, "Temperature", 3, "GPU Memory Junction", temp + 10 + 4 * load),
+            s(hid, "Clock", 0, "GPU Core", 210 + 2600 * min(1.0, load * 1.25) + self._noise(15)),
+            s(hid, "Clock", 4, "GPU Memory", 14001.0),
+            s(hid, "Fan", 1, "GPU Fan 1", rpm * 0.95),
+            s(hid, "Fan", 2, "GPU Fan 2", rpm),
+            s(hid, "Control", 1, "GPU Fan 1", 30 + 50 * load),
+            s(hid, "Control", 2, "GPU Fan 2", 30 + 50 * load),
             s(hid, "Load", 0, "GPU Core", min(100.0, 100 * load + self._noise(1))),
-            s(hid, "Load", 3, "GPU Memory", 100 * used / GPU_VRAM_MB),
-            s(hid, "Clock", 0, "GPU Core", 2100 + 700 * load + self._noise(15)),
-            s(hid, "Clock", 1, "GPU Memory", 14001.0),
-            s(hid, "Power", 0, "GPU Package", 25 + 260 * load + self._noise(3)),
-            s(hid, "Fan", 1, "GPU Fan 1", rpm),
-            s(hid, "Fan", 2, "GPU Fan 2", rpm * 0.98),
-            s(hid, "Control", 1, "GPU Fan 1", 30 + 40 * load if spinning else 0.0),
-            s(hid, "Control", 2, "GPU Fan 2", 30 + 40 * load if spinning else 0.0),
+            s(hid, "Load", 1, "GPU Memory Controller", 2 + 45 * load),
+            s(hid, "Load", 2, "GPU Video Engine", 0.0),
+            s(hid, "Load", 3, "GPU Bus", 5 + 40 * load),
+            s(hid, "Load", 4, "GPU Power", 7 + 85 * load),
+            s(hid, "Load", 5, "GPU Board Power", 6 + 80 * load),
+            s(hid, "Voltage", 0, "GPU Core Voltage", 0.8 + 0.25 * load),
+            s(hid, "SmallData", 3, "D3D Dedicated Memory Used", used - 290),
+            s(hid, "SmallData", 4, "D3D Shared Memory Used", 290.0),
+            s(hid, "Load", 7, "D3D 3D", min(100.0, 100 * load)),
+            s(hid, "Load", 17, "D3D Video Decode", 0.0),
+            s(hid, "Load", 8, "D3D Copy", 3 * load),
+            s(hid, "Load", 9, "D3D Copy", 0.0),
+            s(hid, "Load", 18, "D3D Video Encode", 0.0),
+            s(hid, "Temperature", 3, "GPU Memory Junction", temp + 12 + 4 * load),   # 沒有 GPU Hot Spot
+            s(hid, "SmallData", 2, "GPU Memory Total", GPU_VRAM_MB),
             s(hid, "SmallData", 0, "GPU Memory Free", GPU_VRAM_MB - used),
             s(hid, "SmallData", 1, "GPU Memory Used", used),
-            s(hid, "SmallData", 2, "GPU Memory Total", GPU_VRAM_MB),
+            s(hid, "Load", 3, "GPU Memory", 100 * used / GPU_VRAM_MB),    # 真機就跟 GPU Bus 同一個 Identifier
+            s(hid, "Power", 0, "GPU Package", 20 + 270 * load + self._noise(3)),
+            s(hid, "Throughput", 0, "GPU PCIe Rx", 1.5e6 + 4e7 * load),
+            s(hid, "Throughput", 1, "GPU PCIe Tx", 9e5 + 2e7 * load),
         ])
 
     def _board_hw(self) -> RawHardware:
         v, lid, s = self._v, "/lpc/nct6798d/0", self._sensor
         load = v["cpu_load"]
-        sensors = [
-            s(lid, "Temperature", 0, "CPU", v["cpu"] - 7),
-            s(lid, "Temperature", 1, "Motherboard", v["board"]),
-            s(lid, "Temperature", 2, "Chipset", v["chipset"]),
-            s(lid, "Voltage", 0, "Vcore", 1.0 + 0.35 * load),
-            s(lid, "Voltage", 4, "+12V", 12.1),
-            s(lid, "Voltage", 1, "+5V", 5.04),
-            s(lid, "Voltage", 3, "+3.3V", 3.34),
-        ]
         cpu_heat = min(1.0, max(0.0, (v["cpu"] - 45) / 40))
-        for i, (name, idle, extra) in enumerate(BOARD_FANS):
-            rpm = idle + extra * (cpu_heat if name == "CPU Fan" else load) + (self._noise(8) if idle else 0)
-            sensors.append(s(lid, "Fan", i, name, rpm))
-            sensors.append(s(lid, "Control", i, name, 100 * rpm / 2600 if idle else 0.0))
+        fans, controls = [], []
+        for name, index, idle, extra, full in BOARD_FANS:
+            rpm = idle + extra * (cpu_heat if name == "CPU Fan" else load) + (self._noise(8) if full else 0)
+            fans.append(s(lid, "Fan", index, name, rpm))
+            # 沒接的接頭照樣有輸出（真機 95～100%）
+            controls.append(s(lid, "Control", index, name, min(100.0, 100 * rpm / full) if full else 100.0))
+        sensors = [
+            *controls,
+            *(s(lid, "Voltage", i, name, 1.0 + 0.35 * load if value is None else value) for i, name, value in BOARD_VOLTAGES),
+            s(lid, "Temperature", 22, "CPU", v["cpu"] - 11.5),
+            s(lid, "Temperature", 2, "Motherboard", v["board"]),
+            s(lid, "Temperature", 10, "Chipset", v["chipset"]),
+            *fans,
+        ]
         superio = RawHardware(lid, "Nuvoton NCT6798D", "SuperIO", sensors)
         return RawHardware("/motherboard", "ASUS TUF GAMING X570-PLUS (WI-FI)", "Motherboard", [], [superio])
 
     def _memory_hw(self) -> list[RawHardware]:
         s = self._sensor
-        used = 36.0 + 6.0 * self._v["cpu_load"]
+        used = 29.0 + 6.0 * self._v["cpu_load"]
+        dimms = [RawHardware(f"/memory/dimm/{i}", f"A-DATA Technology - AX4U360032G18I-BWHD (#{i})", "Memory",
+                             [s(f"/memory/dimm/{i}", "Data", 50, "Capacity", 32.0)])     # DDR4 沒有溫度感測器
+                 for i in (2, 3)]
         return [
+            RawHardware("/vram", "Virtual Memory", "Memory", [
+                s("/vram", "Data", 2, "Memory Used", 45.0),
+                s("/vram", "Data", 3, "Memory Available", 55.0),
+                s("/vram", "Load", 1, "Memory", 45.0),
+            ]),
             RawHardware("/ram", "Total Memory", "Memory", [
-                s("/ram", "Load", 0, "Memory", 100 * used / RAM_GB),
                 s("/ram", "Data", 0, "Memory Used", used),
                 s("/ram", "Data", 1, "Memory Available", RAM_GB - used),
+                s("/ram", "Load", 0, "Memory", 100 * used / RAM_GB),
             ]),
-            RawHardware("/vram", "Virtual Memory", "Memory", [
-                s("/vram", "Load", 1, "Memory", 52.0),
-                s("/vram", "Data", 2, "Memory Used", 48.0),
-                s("/vram", "Data", 3, "Memory Available", 44.0),
-            ]),
+            *dimms,
         ]
 
     def _drives_hw(self) -> list[RawHardware]:
         out = []
+        s = self._sensor
         for i, (hid, model, _idle, _extra, used, total) in enumerate(DRIVES):
-            s = self._sensor
             temp = self._v[f"drive{i}"]
             nvme = hid.startswith("/nvme")
             busy = max(0.0, 3 + 20 * self._v["cpu_load"] * (1 if i < 2 else 0.2) + self._noise(2))
-            sensors = [
-                s(hid, "Temperature", 0, "Composite Temperature" if nvme else "Temperature", temp),
+            life, read, written, count, hours = DRIVE_SMART[hid]
+            sensors = [s(hid, "Temperature", 0, "Composite Temperature" if nvme else "Temperature", temp)]
+            if nvme:
+                warning, critical = NVME_LIMITS[hid]
+                sensors += [s(hid, "Temperature", 10, "Warning Temperature", warning),
+                            s(hid, "Temperature", 11, "Critical Temperature", critical)]
+            if life is not None:
+                sensors.append(s(hid, "Level", 20, "Life", life))
+            if read is not None:
+                sensors.append(s(hid, "Data", 21, "Data Read", read))
+            if written is not None:
+                sensors.append(s(hid, "Data", 22, "Data Written", written))
+            sensors += [
+                s(hid, "Factor", 23, "Power On Count", count),
+                s(hid, "Factor", 24, "Power On Hours", hours),
                 s(hid, "Load", 30, "Used Space", used),
-                s(hid, "Load", 53, "Total Activity", busy),
                 s(hid, "Data", 31, "Free Space", total * (1 - used / 100)),
                 s(hid, "Data", 32, "Total Space", total),
+                s(hid, "Load", 51, "Read Activity", busy * 0.3),
+                s(hid, "Load", 52, "Write Activity", busy * 0.7),
+                s(hid, "Load", 53, "Total Activity", busy),
+                s(hid, "Throughput", 54, "Read Rate", busy * 2e6),
+                s(hid, "Throughput", 55, "Write Rate", busy * 5e6),
             ]
             if nvme:
-                sensors += [s(hid, "Temperature", 10, "Warning Temperature", 83.0),
-                            s(hid, "Temperature", 11, "Critical Temperature", 85.0)]
+                spare, floor, worn = NVME_HEALTH[hid]
+                sensors += [s(hid, "Level", 100, "Available Spare", spare),
+                            s(hid, "Level", 101, "Available Spare Threshold", floor),
+                            s(hid, "Level", 102, "Percentage Used", worn)]
             out.append(RawHardware(hid, model, "Storage", sensors))
         return out

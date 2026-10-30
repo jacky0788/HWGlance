@@ -17,10 +17,11 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 
 | 位置 | 放什麼 |
 |---|---|
-| `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware` |
-| `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦的硬體模擬，名稱與 Identifier 跟 LHM 一樣 |
+| `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware`；`specs()` 讀規格（SMBIOS＋WMI 的硬碟與顯示卡驅動） |
+| `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣 |
 | `src/hwglance/sensors/model.py` | `RawHardware`／`RawSensor`（LHM 與示範資料共用的形狀） |
 | `src/hwglance/sensors/normalize.py` | 整理：分類、總覽磚塊、主溫度、負載／時脈／功耗、風扇。純函式，`tests/test_normalize.py` 用假樹測 |
+| `src/hwglance/sensors/details.py` | 點硬體跳出的詳細資訊：規格＋所有讀數分段（規格、溫度、負載…），中文名稱、單位、一句說明；挑剩的放「其他讀數」。純函式，`tests/test_details.py` 用示範資料測 |
 | `src/hwglance/sensors/labels.py`、`thresholds.py` | 英文感測器名稱 → 中文；溫度門檻（正常／偏高／過熱） |
 | `src/hwglance/sensors/history.py`、`service.py` | 最近 10 分鐘的歷史；背景執行緒＋快照快取（硬碟每 10 輪才讀一次） |
 | `src/hwglance/api/` | `app.py` 端點（清單在檔案開頭）、`security.py` Host 檢查與 token |
@@ -30,16 +31,16 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/ui.py` | 視窗程序（pywebview）：主畫面／迷你視窗（`UiApp.switch`）、網頁按鈕的 `Bridge`、長輪詢本體指令（`poll_commands`）、迷你位置記在 `data/ui-state.json` |
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
-| `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、畫面上的提醒文字 |
+| `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、CPU 快取大小（Windows API）、畫面上的提醒文字 |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
 | ProjectHub 的 `registry/hwglance/project.toml` | 登錄到 ProjectHub（只有「啟動」一個按鈕）；要改照 ProjectHub 的 `docs/SOP-edit-project.md` |
 | `frontend/src/pages/` | `Dashboard.tsx` 主畫面、`Mini.tsx` 迷你視窗（`/?view=mini`），只負責排版 |
-| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`status/`（頂端列、提醒、底部）、`settings/`（設定面板） |
-| `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`、`Readout`（數值格與清單列） |
+| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`status/`（頂端列、提醒、底部）、`settings/`（設定面板） |
+| `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`（給 `onOpen` 就整張可點、標題列有「詳細」按鈕）、`Readout`（數值格與清單列） |
 | `frontend/src/lib/` | `api.ts`（唯一發請求的地方）、`useSnapshot.ts`（每秒抓、看不到就停）、`useHistory.ts`、`format.ts`（溫度一律傳 °C 進來，顯示時才換 °F）、`prefs.ts`（溫度單位的 context）、`bridge.ts`（桌面視窗的切換／關閉） |
-| `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot` |
+| `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot`；硬體種類色 `--kind-*`（外層加 `kind-cpu` 這類 class，`level-ok` 會用種類色，偏高／過熱照舊黃、紅；SPEC D22） |
 
 ## 硬性規則
 
@@ -55,7 +56,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 7. 連動修改：快照欄位改了 → 同步 `frontend/src/types.ts`；歷史的鍵 → `normalize.history_values` 與
    `frontend/src/lib/useHistory.ts` 的 `valuesOf` 要一樣；`tokens.css` 的 `--bg` → `ui.py` 的 `BACKGROUND`；
    設定欄位 → `settings.py`、`api/app.py` 的 `settings_payload`／`SettingsBody`、`types.ts` 的 `SettingsPayload`；
-   新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你視窗的內容變高 → `ui.py` 的 `MINI_SIZE`。
+   新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你視窗的內容變高 → `ui.py` 的 `MINI_SIZE`；
+   詳細資訊的欄位（`details.py`）→ `types.ts` 的 `DeviceDetail`；規格的欄位（`lhm.specs`）→ `demo.specs` 要一樣。
 8. commit 不加 AI 署名；repo 自設身分 `HWGlance <jacky0788@users.noreply.github.com>`；使用者說要才 commit。
 
 ## 怎麼跑
@@ -68,10 +70,27 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
 | 叫出迷你視窗／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden` |
 
-## 環境事實（2026-10-29～30 驗證過）
+## 環境事實（2026-10-29～31 驗證過）
 
 - 這台：Ryzen 7 5800X、RTX 5070 Ti、ASUS TUF GAMING X570-PLUS (WI-FI)（Super I/O 是 NCT6798D）、
   DDR4 沒有溫度感測器、6 顆硬碟（2 NVMe＋2 SATA SSD＋2 HDD）。LHM 原始碼對這塊主機板有專屬設定（3 個溫度、7 組風扇）。
+- 真機 probe（2026-10-31，PawnIO 2.2.0.0）：LHM 全部讀得到。主機板溫度的 Identifier 是 CPU 22、Motherboard 2、Chipset 10；
+  RTX 5070 Ti 沒有 GPU Hot Spot；硬碟用實體磁碟編號；SATA 型號帶結尾空白；硬碟溫度的最低值會是 0（讀到 SMART 前）；
+  LHM 有重複的 Identifier（GPU Bus 與 GPU Memory 都是 `/gpu-nvidia/0/load/3`），不要拿感測器 id 當唯一鍵（溫度沒有重複）。
+  這台閒置時晶片組約 78°C、KIOXIA 約 57°C（所以這兩種的預設門檻調高了，SPEC 的 D18）；CPU Tctl 在 30% 負載就 77°C（主機板量的 CPU 低約 11°C）。
+  開全部種類時 LHM 開啟 6.7 秒、每秒一輪約 89 ms。細節見 `docs/SPEC.md` 的「真機 probe」。
+- 對照 HWMonitor 1.68（`data/probe/HWMonitor.txt`，「File → Save Monitoring Data」存的）：報告裡沒有解好的硬碟溫度，
+  要從 SMART 原始資料解（SATA 屬性 0xC2 原始值的第 1 個位元組；NVMe 健康紀錄第 1～2 位元組，單位 K）。
+  NCT6798D 在 HWMonitor 只有通用通道名（SYSTIN、AUXTIN1…）；LHM 的 Motherboard＝SYSTIN、CPU＝PECI_0_CAL（Tctl 扣約 11°C，
+  CPU 與機殼風扇照它轉）、Chipset＝SMBUSMASTER1（晶片組風扇照它轉）。RTX 50 的 GPU 熱點只有 HWMonitor 讀得到（直接讀顯卡暫存器）。
+- 真機實測（2026-10-31，開著主畫面）：本體 99 MB、視窗程序 66 MB、WebView2 128 MB（合計約 295 MB），CPU 約整台 0.18%；
+  LHM 每秒一輪 85～90 ms（大多在等硬體）。晶片組 5 分半鐘都在 75.5～76.5°C、跟 CPU 無關（確定是晶片組）；
+  CCD1 每秒在 48～78°C 之間跳（所以 CPU 卡片不列 CCD，SPEC 的 D19）。量法：`/api/history` 看走勢；記憶體與 CPU 用 `Win32_PerfRawData_PerfProc_Process` 取兩次相減，
+  從 `data/instance.json` 的 pid 往下找子程序（本體以系統管理員執行，一般權限讀不到它的命令列，但效能計數器讀得到）。
+- 規格（2026-10-31）：SMBIOS（BIOS 5021、主機板、AM4／8 核 16 緒、記憶體插槽）由 LHM 讀；硬碟韌體、介面、Windows 判斷的健康與
+  顯示卡驅動查 WMI（`MSFT_PhysicalDisk`、`Win32_VideoController`，非管理員也查得到，在這台試過）。這兩顆機械硬碟 Windows 回報轉速
+  4294967295（不知道），所以不顯示轉速。CPU 快取用 `GetLogicalProcessorInformation`（SMBIOS 的 L3 報 32.5 MB，不準）。
+  NVIDIA 驅動版本＝Windows 版本的最後五位數（32.0.16.1088 → 610.88）。
 - Python 3.14.3、pythonnet 3.2.1、pywebview 6.2.1、FastAPI 0.162；前端 React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3。
 - 不靠驅動能讀的只有顯卡（nvidia-smi 非管理員實測 70°C）。WMI 的 ACPI 溫度回「不受支援」、硬碟 SMART 非管理員被拒。
 - **auto mode 擋過 agent 執行下載的 LHM DLL**（理由 Code from External）：真的讀數由使用者跑 `probe.bat`／`run.bat`，

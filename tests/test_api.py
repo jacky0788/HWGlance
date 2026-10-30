@@ -36,7 +36,7 @@ def test_snapshot(client):
     r = client.get("/api/snapshot")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     snap = r.json()
-    assert snap["seq"] == 1 and len(snap["overview"]) == 11
+    assert snap["seq"] == 1 and len(snap["overview"]) == 10
     assert snap["source"] == {"kind": "demo", "version": "demo", "admin": True, "pawnio": "2.2.0",
                               "notes": ["示範資料：數字是模擬的，不是這台電腦的讀數"]}
 
@@ -46,7 +46,17 @@ def test_history_and_sensors(client):
     assert len(h["t"]) == 1 and "/amdcpu/0/temperature/2" in h["series"]
     assert client.get("/api/history", params={"seconds": 5}).status_code == 422     # 最少 10 秒
     tree = client.get("/api/sensors").json()
-    assert tree[0]["id"] == "/amdcpu/0" and tree[2]["children"][0]["type"] == "SuperIO"
+    assert tree[0]["id"] == "/motherboard" and tree[0]["children"][0]["type"] == "SuperIO"   # 順序照 LHM
+    assert tree[1]["id"] == "/amdcpu/0"
+
+
+def test_device_details(client):
+    r = client.get("/api/device", params={"id": "/nvme/5"})
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    d = r.json()
+    assert d["name"] == "KIOXIA-EXCERIA G2 SSD" and d["sections"][0]["title"] == "規格"
+    assert client.get("/api/device", params={"id": "/nope"}).status_code == 404
+    assert client.get("/api/device").status_code == 422
 
 
 def test_status(client):

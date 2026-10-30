@@ -88,6 +88,19 @@ def snapshot_lines(snap: dict) -> list[str]:
     return out
 
 
+def spec_lines(specs: dict, errors: list[str]) -> list[str]:
+    out = ["== 規格（詳細資訊視窗用）=="]
+    for key, value in specs.items():
+        if isinstance(value, list) or (isinstance(value, dict) and all(isinstance(v, dict) for v in value.values())):
+            out.append(f"  {key}:")
+            items = value if isinstance(value, list) else [f"{k}: {v}" for k, v in value.items()]
+            out += [f"    {item}" for item in items]
+        else:
+            out.append(f"  {key}: {value}")
+    out += [f"  讀不到 {e}" for e in errors]
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m hwglance.probe", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -129,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
             lines.append(f"讀取錯誤：{e}")
         lines.append("")
         lines += snapshot_lines(normalize(tree))
+        lines += [""] + spec_lines(source.specs(), getattr(source, "spec_errors", []))
         lines += ["", "== LHM 原始讀數 =="] + tree_lines(tree)
         if isinstance(source, LhmSource):
             report = source.report()

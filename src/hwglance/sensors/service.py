@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from .. import system
+from .details import device_details
 from .history import History
 from .model import RawHardware
 from .normalize import history_values, normalize
@@ -55,6 +56,7 @@ class SensorService:
         self._state = "starting"
         self._error: str | None = None
         self._raw: list[RawHardware] = []
+        self._specs: dict = {}
         self._snap = self._empty()
         self._json = dumps(self._snap)
 
@@ -72,6 +74,12 @@ class SensorService:
         with self._lock:
             tree = self._raw
         return [hw.to_dict() for hw in tree]
+
+    def details(self, device_id: str) -> dict | None:
+        """點硬體跳出的詳細資訊（details.py）；用最近一輪的讀數與開啟時讀的規格，不會多讀硬體。"""
+        with self._lock:
+            snap, tree, specs = self._snap, self._raw, self._specs
+        return device_details(tree, snap, device_id, specs)
 
     def subscribe(self, listener: Callable[[dict], None]) -> None:
         """每讀完一輪就在感測執行緒裡呼叫 listener(快照)；要很快做完（例如系統匣換圖示）。"""
@@ -100,6 +108,19 @@ class SensorService:
         self._state = "running"
         return True
 
+    def load_specs(self) -> None:
+        """規格（BIOS、CPU 核心數、硬碟韌體…）只讀一次；在感測執行緒裡、第一輪讀數之後，不拖慢第一個畫面。"""
+        reader = getattr(self.source, "specs", None)
+        if not callable(reader):
+            return
+        try:
+            specs = reader() or {}
+        except Exception:                            # noqa: BLE001 - 沒有規格只是詳細資訊少幾行
+            traceback.print_exc()
+            return
+        with self._lock:
+            self._specs = specs
+
     def _run(self) -> None:
         if not self.open():
             return
@@ -107,6 +128,8 @@ class SensorService:
             next_at = time.monotonic()
             while True:
                 self.tick()
+                if self._ticks == 1:
+                    self.load_specs()
                 next_at += self.interval
                 delay = next_at - time.monotonic()
                 if delay < -self.interval:           # 落後太多（例如電腦剛從睡眠醒來）就重新對時

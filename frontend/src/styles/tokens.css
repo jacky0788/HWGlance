@@ -7,6 +7,8 @@
  *
  * 跟著 Windows 的深淺色。深色是主要設計（參考 CAM 的深色儀表板）；ui.py 的 BACKGROUND 要跟 --bg 一樣。
  * 溫度等級三色：--ok（正常）、--warm（偏高）、--hot（過熱），--none 是讀不到。
+ * 硬體種類色 --kind-*：溫度正常時就用種類色（CPU 藍、GPU 紫、主機板青綠、記憶體粉、硬碟天藍），
+ * 一眼分得出是哪種硬體；偏高、過熱一律蓋成黃、紅。種類色刻意避開黃、紅。
  */
 :root {
   font-size: clamp(0.875rem, 0.3125vw + 0.6875rem, 1.0625rem);
@@ -31,6 +33,13 @@
   --hot: #c42b2b;
   --hot-soft: #fbe6e6;
   --none: #9aa1ad;
+
+  --kind-cpu: #2f63d6;
+  --kind-gpu: #8a3fd1;
+  --kind-board: #0f8f84;
+  --kind-memory: #c2357f;
+  --kind-storage: #0784a8;
+  --kind-other: #6b7280;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,5 +63,12 @@
     --hot: #ff6b6b;
     --hot-soft: #3a1515;
     --none: #5f6673;
+
+    --kind-cpu: #6b96ff;
+    --kind-gpu: #c38bff;
+    --kind-board: #34d1bd;
+    --kind-memory: #f57cba;
+    --kind-storage: #3fc8eb;
+    --kind-other: #9aa1ad;
   }
 }

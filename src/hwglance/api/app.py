@@ -3,6 +3,7 @@
     GET  /api/snapshot          目前的快照（normalize.py 的輸出＋seq、time、source、perf、prefs）
     GET  /api/history?seconds=  最近幾秒的溫度、負載、功耗（折線圖用，10～3600 秒）
     GET  /api/sensors           LHM 的原始硬體樹（除錯、「全部感測器」用）
+    GET  /api/device?id=        一個硬體的詳細資訊（規格＋所有讀數，分段、中文；sensors/details.py）
     GET  /api/status            程式資訊（--activate 用來確認是不是自己）
     GET  /api/settings          設定＋預設值與名稱（設定頁用）
     PUT  /api/settings          存設定（要 token），下一輪讀數就生效
@@ -81,6 +82,13 @@ def create_app(service: SensorService, token: str | None = None,
     @app.get("/api/sensors")
     def sensors() -> JSONResponse:
         return JSONResponse(service.raw(), headers=NO_STORE)
+
+    @app.get("/api/device")
+    def device(device_id: str = Query(..., alias="id", min_length=1, max_length=200)) -> JSONResponse:
+        detail = service.details(device_id)
+        if detail is None:
+            return JSONResponse({"detail": "找不到這個硬體"}, status_code=404)
+        return JSONResponse(detail, headers=NO_STORE)
 
     @app.get("/api/status")
     def status() -> dict:

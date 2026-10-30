@@ -5,8 +5,10 @@ import math
 
 from hwglance.sensors.history import History
 from hwglance.sensors.labels import label
-from hwglance.sensors.lhm import SLOW_TYPES, convert, update_tree
+from hwglance.sensors.lhm import (SLOW_TYPES, convert, disks_from_wmi, gpus_from_wmi, nvidia_version, smbios_specs,
+                                  update_tree)
 from hwglance.sensors.thresholds import DEFAULTS, Band, level
+from hwglance.system import cache_totals
 
 
 def test_labels():
@@ -83,6 +85,13 @@ def test_convert_reads_nested_hardware_and_cleans_numbers():
     assert fan.value is None and volt.value is None            # NaN 當成沒有值
 
 
+def test_convert_strips_padded_names():
+    disk = _Hardware("/ssd/0", "CT1000MX500SSD1 ", "Storage",                  # 真機 LHM 給的名稱
+                     [_Sensor("/ssd/0/temperature/0", " Temperature", "Temperature", 27.0)])
+    raw = convert(disk)
+    assert raw.name == "CT1000MX500SSD1" and raw.sensors[0].name == "Temperature"
+
+
 def test_update_tree_updates_sub_hardware_and_skips_slow_ones():
     chip = _Hardware("/lpc/x", "chip", "SuperIO")
     board = _Hardware("/motherboard", "board", "Motherboard", [], [chip])
@@ -93,3 +102,45 @@ def test_update_tree_updates_sub_hardware_and_skips_slow_ones():
     assert (board.updates, chip.updates, disk.updates) == (1, 1, 0)
     update_tree(disk, slow=True, errors=errors)
     assert disk.updates == 1 and errors == [] and "Storage" in SLOW_TYPES
+
+
+class _Obj:
+    def __init__(self, **fields) -> None:
+        self.__dict__.update(fields)
+
+
+def test_smbios_specs_skip_empty_slots_and_filler_text():
+    def dimm(slot, maker, part, size, speed, mv, kind):
+        return _Obj(DeviceLocator=slot, ManufacturerName=maker, PartNumber=part, Size=size, Speed=speed,
+                    ConfiguredSpeed=speed, ConfiguredVoltage=mv, Type=_Enum(kind))
+    smbios = _Obj(Bios=_Obj(Vendor="American Megatrends Inc.", Version="5021", Date="2024-09-29T00:00:00"),
+                  Board=_Obj(ManufacturerName="ASUSTeK COMPUTER INC.", ProductName="TUF GAMING X570-PLUS (WI-FI)",
+                             Version="Rev X.0x"),
+                  Processors=[_Obj(SocketDesignation="AM4", CoreCount=8, ThreadCount=16, MaxSpeed=4850)],
+                  MemoryDevices=[dimm("DIMM_A1", "Unknown", "Unknown", 0, 0, 0, "Unknown"),
+                                 dimm("DIMM_A2", "A-DATA", "AX4U360032G18I-BWHD3 ", 32768, 3600, 1200, "DDR4")])
+    specs = smbios_specs(smbios)
+    assert specs["bios"] == {"vendor": "American Megatrends Inc.", "version": "5021", "date": "2024-09-29"}
+    assert specs["cpu"] == {"socket": "AM4", "cores": 8, "threads": 16, "maxMHz": 4850}
+    assert specs["memory"][0] == {"slot": "DIMM_A1", "maker": None, "part": None, "sizeMB": 0, "speed": None,
+                                  "voltageMV": None, "type": None}
+    assert specs["memory"][1]["part"] == "AX4U360032G18I-BWHD3" and specs["memory"][1]["type"] == "DDR4"
+
+
+def test_wmi_rows_become_disk_and_gpu_specs():
+    disks = disks_from_wmi([
+        {"DeviceId": "5", "FriendlyName": "KIOXIA-EXCERIA G2 SSD", "FirmwareVersion": "ECFA17.1", "BusType": 17,
+         "SpindleSpeed": 0, "HealthStatus": 0, "Size": 2000398934016},
+        {"DeviceId": "1", "FriendlyName": "ST20000DM001-3Y3103", "FirmwareVersion": "DN02", "BusType": "11",
+         "SpindleSpeed": 7200, "HealthStatus": 1, "Size": None}])
+    assert (disks["5"]["bus"], disks["5"]["rpm"], disks["5"]["health"]) == ("NVMe", None, "healthy")   # SSD 轉速是 0
+    assert (disks["1"]["bus"], disks["1"]["rpm"], disks["1"]["health"]) == ("SATA", 7200, "warning")
+    gpus = gpus_from_wmi([{"Name": "NVIDIA GeForce RTX 5070 Ti", "DriverVersion": "32.0.16.1088",
+                           "DriverDate": "20260722000000.000000-000"}])
+    assert gpus["NVIDIA GeForce RTX 5070 Ti"] == {"driver": "610.88", "driverDate": "2026-07-22"}
+    assert nvidia_version("32.0.15.7680") == "576.80" and nvidia_version("31.0") == "31.0"
+
+
+def test_cache_totals_add_up_each_level():
+    caches = [(1, 32 * 1024)] * 16 + [(2, 512 * 1024)] * 8 + [(3, 32 * 2**20)]   # 5800X：L1 指令＋資料各 8 顆
+    assert cache_totals(caches) == {1: 512 * 1024, 2: 4 * 2**20, 3: 32 * 2**20}

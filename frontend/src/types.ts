@@ -103,3 +103,43 @@ export interface HistoryWindow {
   t: number[];
   series: Record<string, (number | null)[]>;
 }
+
+// /api/device?id=（後端 src/hwglance/sensors/details.py）：點硬體跳出的詳細資訊，欄位改了兩邊一起改
+export interface DetailRow {
+  label: string;
+  value: number | string | null;
+  unit?: string;
+  note?: string; // 一句說明
+  temp?: boolean; // 溫度：值是 °C，顯示時照設定換 °F
+  level?: Level;
+  min?: number | null;
+  max?: number | null;
+}
+
+export interface DetailTable {
+  columns: { label: string; unit?: string }[];
+  rows: { label: string; cells: (number | string | null)[] }[];
+}
+
+export interface DetailBars {
+  label: string;
+  unit: string;
+  max: number;
+  items: { label: string; value: number | null }[];
+}
+
+export interface DetailSection {
+  title: string;
+  note?: string;
+  rows?: DetailRow[];
+  table?: DetailTable;
+  bars?: DetailBars;
+}
+
+export interface DeviceDetail {
+  id: string;
+  kind: Kind;
+  name: string;
+  sub: string;
+  sections: DetailSection[];
+}

@@ -20,12 +20,12 @@ class FakeClock:
 
 def test_demo_looks_like_this_machine():
     snap = normalize(DemoSource(seed=1).read())
-    assert [t["label"] for t in snap["overview"]] == [
-        "CPU", "GPU 核心", "GPU 熱點", "主機板", "晶片組",
-        "KIOXIA-EXCERIA G2", "KINGSTON SA2000M8500G", "CT1000MX500", "CT500MX500",
-        "TOSHIBA DT02ABA400", "ST20000DM001-3Y3103"]
+    assert [t["label"] for t in snap["overview"]] == [                 # 跟 2026-10-31 真機 probe 的總覽一樣
+        "CPU", "GPU 核心", "主機板", "晶片組",
+        "KIOXIA-EXCERIA G2", "KINGSTON SA2000M8500G", "CT1000MX500",
+        "TOSHIBA DT02ABA400", "ST20000DM001-3Y3103", "CT500MX500"]
     board = next(d for d in snap["devices"] if d["kind"] == "board")
-    assert board["unplugged"] == 3 and len(board["fans"]) == 4
+    assert board["unplugged"] == 2 and len(board["fans"]) == 5          # 機殼風扇 3、水冷幫浦沒接
 
 
 def test_demo_values_stay_plausible_over_ten_minutes():
@@ -60,11 +60,14 @@ def test_service_ticks_into_snapshot_json_and_history():
     snap = json.loads(service.snapshot_json())
     assert snap["seq"] == 3 and snap["state"] == "running"
     assert snap["source"]["kind"] == "demo" and snap["source"]["notes"][0].startswith("示範資料")
-    assert snap["perf"]["readMs"] >= 0 and len(snap["overview"]) == 11
+    assert snap["perf"]["readMs"] >= 0 and len(snap["overview"]) == 10
     window = service.history.window(60)
     assert len(window["t"]) == 3
     assert len(window["series"]["/amdcpu/0/temperature/2"]) == 3
-    assert service.raw()[0]["id"] == "/amdcpu/0"
+    assert service.raw()[0]["id"] == "/motherboard"
+    assert service.details("/amdcpu/0")["sections"][0]["rows"][1:] == []        # 規格還沒讀：只有型號
+    service.load_specs()
+    assert service.details("/amdcpu/0")["sections"][0]["rows"][1]["value"] == "AM4"
 
 
 class BrokenSource:

@@ -4,6 +4,8 @@
 - CPU：Ryzen 5000 的 Tjmax 是 90°C，到了會降頻；80 以上算偏高。
 - GPU 核心：RTX 50 系列大約 88°C 開始降頻。熱點、顯存本來就比核心高 10～20°C，門檻另外算。
 - 硬碟：NVMe／SATA SSD 70°C 左右開始降速；機械硬碟超過 45°C 就不理想。
+- 2026-10-31 依真機調高（使用者同意）：晶片組 70/80 → 80/90（X570 晶片組平常就 70～80°C，真機閒置 78°C）；
+  NVMe 55/70 → 60/70（真機 KIOXIA 閒置 57°C，它自己回報的警告溫度是 71°C）。
 """
 from __future__ import annotations
 
@@ -22,9 +24,9 @@ DEFAULTS: dict[str, Band] = {
     "gpu_hotspot": Band(95, 105),
     "gpu_memory": Band(95, 105),
     "board": Band(50, 65),
-    "chipset": Band(70, 80),
+    "chipset": Band(80, 90),
     "vrm": Band(85, 100),
-    "nvme": Band(55, 70),
+    "nvme": Band(60, 70),
     "ssd": Band(55, 70),
     "hdd": Band(45, 55),
     "dimm": Band(60, 75),

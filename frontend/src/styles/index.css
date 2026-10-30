@@ -54,10 +54,33 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 溫度等級：外層加 level-ok／-warm／-hot／-none，裡面用 var(--level)（Tailwind 寫 text-(--level)） */
+/* 硬體種類：卡片、磚塊、詳細視窗的外層加 kind-cpu…，裡面用 var(--kind) */
+.kind-cpu {
+  --kind: var(--kind-cpu);
+}
+.kind-gpu {
+  --kind: var(--kind-gpu);
+}
+.kind-board,
+.kind-cooler {
+  --kind: var(--kind-board);
+}
+.kind-memory {
+  --kind: var(--kind-memory);
+}
+.kind-storage {
+  --kind: var(--kind-storage);
+}
+.kind-psu,
+.kind-other {
+  --kind: var(--kind-other);
+}
+
+/* 溫度等級：外層加 level-ok／-warm／-hot／-none，裡面用 var(--level)（Tailwind 寫 text-(--level)）。
+   正常時用硬體種類色（外層有 kind-*），沒有種類的地方才用 --ok 綠色；偏高、過熱一律黃、紅。 */
 .level-ok {
-  --level: var(--ok);
-  --level-soft: var(--ok-soft);
+  --level: var(--kind, var(--ok));
+  --level-soft: color-mix(in srgb, var(--kind, var(--ok)) 14%, transparent);
 }
 .level-warm {
   --level: var(--warm);
@@ -111,19 +134,6 @@ body {
 }
 .gauge-label {
   fill: var(--fg-subtle);
-}
-
-/* 點總覽磚塊後，對應的卡片閃一下 */
-.flash {
-  animation: flash 1.2s ease;
-}
-@keyframes flash {
-  0% {
-    box-shadow: 0 0 0 0.2rem var(--accent);
-  }
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
