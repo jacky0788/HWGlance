@@ -8,7 +8,7 @@ from hwglance.sensors.labels import label
 from hwglance.sensors.lhm import (SLOW_TYPES, convert, disks_from_wmi, gpus_from_wmi, nvidia_version, smbios_specs,
                                   update_tree)
 from hwglance.sensors.thresholds import DEFAULTS, Band, level
-from hwglance.system import cache_totals
+from hwglance.system import cache_totals, describe_process, pid_of_instance, process_name
 
 
 def test_labels():
@@ -139,6 +139,31 @@ def test_wmi_rows_become_disk_and_gpu_specs():
                            "DriverDate": "20260722000000.000000-000"}])
     assert gpus["NVIDIA GeForce RTX 5070 Ti"] == {"driver": "610.88", "driverDate": "2026-07-22"}
     assert nvidia_version("32.0.15.7680") == "576.80" and nvidia_version("31.0") == "31.0"
+
+
+def test_gpu_process_names():
+    assert pid_of_instance("pid_1300_luid_0x00000000_0x00011E56_phys_0") == 1300 and pid_of_instance("_Total") is None
+    assert describe_process(r"C:\Windows\System32\dwm.exe", None, 1300) == "桌面視窗管理員（Windows 畫面）"
+    assert describe_process("dwm.exe", None, 1300) == "桌面視窗管理員（Windows 畫面）"     # 只拿到檔名也認得
+    assert describe_process(r"C:\Py\python.exe", r'"C:\Py\python.exe" "D:\AI\ComfyUI\main.py" --listen', 7) \
+        == "python（ComfyUI\\main.py）"
+    assert describe_process(r"C:\x\pythonw.exe", r"C:\x\pythonw.exe -m hwglance --ui", 8) == "pythonw（-m hwglance）"
+    assert describe_process(r"C:\Apps\ChatGPT.exe", "ChatGPT.exe", 9) == "ChatGPT"
+    assert describe_process(None, None, 42) == "程式 42"
+
+
+def test_webview2_is_named_after_the_program_that_opened_it():
+    # 真機 2026-10-31：WebView2 11676 ← WebView2 12156 ← pythonw 8636 ← pythonw 8400 ← HWGlance 本體 9000
+    table = {11676: ("msedgewebview2.exe", 12156), 12156: ("msedgewebview2.exe", 8636), 8636: ("pythonw.exe", 8400),
+             8400: ("pythonw.exe", 9000), 9000: ("pythonw.exe", 1), 32972: ("msedgewebview2.exe", 14520),
+             14520: ("msedgewebview2.exe", 15016), 15016: ("pythonw.exe", 15020), 15020: ("pythonw.exe", 1)}
+    cmd = {15016: r"C:\p\pythonw.exe -m projecthub"}
+
+    def info(pid):
+        return (r"C:\x\msedgewebview2.exe" if table[pid][0].startswith("msedge") else None), cmd.get(pid)
+    assert process_name(11676, table, 9000, info) == "HWGlance 這個視窗（WebView2）"
+    assert process_name(32972, table, 9000, info) == "pythonw（-m projecthub） 的視窗（WebView2）"
+    assert process_name(15016, table, 9000, info) == "pythonw（-m projecthub）"
 
 
 def test_cache_totals_add_up_each_level():

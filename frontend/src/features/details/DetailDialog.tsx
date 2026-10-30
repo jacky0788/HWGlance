@@ -40,8 +40,9 @@ function RowValue({ row }: { row: DetailRow }) {
 function Rows({ rows }: { rows: DetailRow[] }) {
   return (
     <dl className="m-0">
-      {rows.map((row) => (
-        <div key={row.label} className="flex items-start justify-between gap-4 py-2 border-t border-line first:border-t-0">
+      {rows.map((row, i) => (
+        // 名稱可能重複（好幾個 WebView2），key 要加上位置，不然 React 會把列搞混
+        <div key={`${i}:${row.label}`} className="flex items-start justify-between gap-4 py-2 border-t border-line first:border-t-0">
           <dt className="min-w-0">
             <span className="text-sm text-fg-muted">{row.label}</span>
             {row.note ? <span className="block text-xs text-fg-subtle">{row.note}</span> : null}
@@ -60,8 +61,8 @@ function Bars({ bars }: { bars: DetailBars }) {
     <div className="mt-3">
       <p className="m-0 mb-2 text-xs text-fg-subtle">{bars.label}</p>
       <ul className="m-0 p-0 list-none grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-x-3 gap-y-2.5">
-        {bars.items.map((item) => (
-          <li key={item.label} className="min-w-0" title={item.label}>
+        {bars.items.map((item, i) => (
+          <li key={`${i}:${item.label}`} className="min-w-0" title={item.label}>
             <div className="flex items-baseline justify-between gap-1 text-xs">
               <span className="text-fg-muted truncate">{item.label}</span>
               <span className="num">{number(item.value)}{bars.unit}</span>
@@ -95,8 +96,8 @@ function Table({ table }: { table: DetailTable }) {
           </tr>
         </thead>
         <tbody>
-          {table.rows.map((r) => (
-            <tr key={r.label} className="border-t border-line">
+          {table.rows.map((r, i) => (
+            <tr key={`${i}:${r.label}`} className="border-t border-line">
               <th scope="row" className="py-1.5 pr-2 text-left font-normal text-fg-muted whitespace-nowrap">{r.label}</th>
               {r.cells.map((cell, i) => (
                 <td key={table.columns[i]?.label ?? i}
@@ -199,7 +200,7 @@ export function DetailDialog({ deviceId, device, interval, onClose }: {
           {data == null ? (
             <p className="m-0 py-6 text-sm text-fg-muted text-center">{error ?? "讀取中…"}</p>
           ) : (
-            data.sections.map((s) => <Section key={s.title} section={s} />)
+            data.sections.map((s, i) => <Section key={`${i}:${s.title}`} section={s} />)
           )}
         </div>
       </div>

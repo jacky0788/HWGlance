@@ -57,6 +57,7 @@ class SensorService:
         self._error: str | None = None
         self._raw: list[RawHardware] = []
         self._specs: dict = {}
+        self._gpu_procs: tuple[float, list[dict] | None] | None = None
         self._snap = self._empty()
         self._json = dumps(self._snap)
 
@@ -76,10 +77,29 @@ class SensorService:
         return [hw.to_dict() for hw in tree]
 
     def details(self, device_id: str) -> dict | None:
-        """點硬體跳出的詳細資訊（details.py）；用最近一輪的讀數與開啟時讀的規格，不會多讀硬體。"""
+        """點硬體跳出的詳細資訊（details.py）；用最近一輪的讀數與開啟時讀的規格，不會多讀硬體。
+        顯示卡另外附上佔用顯存的程式（只有詳細視窗開著時才查，2 秒內重複用上一次的）。"""
         with self._lock:
             snap, tree, specs = self._snap, self._raw, self._specs
-        return device_details(tree, snap, device_id, specs)
+        kind = next((d["kind"] for d in snap["devices"] if d["id"] == device_id), None)
+        procs = self.gpu_processes() if kind == "gpu" else None
+        return device_details(tree, snap, device_id, specs, procs)
+
+    def gpu_processes(self) -> list[dict] | None:
+        reader = getattr(self.source, "gpu_processes", None)
+        if not callable(reader):
+            return None
+        now = time.monotonic()
+        cached = self._gpu_procs
+        if cached is not None and now - cached[0] < 2.0:
+            return cached[1]
+        try:
+            procs = reader()
+        except Exception:                            # noqa: BLE001 - 查不到就不列那一段
+            traceback.print_exc()
+            procs = None
+        self._gpu_procs = (now, procs)
+        return procs
 
     def subscribe(self, listener: Callable[[dict], None]) -> None:
         """每讀完一輪就在感測執行緒裡呼叫 listener(快照)；要很快做完（例如系統匣換圖示）。"""

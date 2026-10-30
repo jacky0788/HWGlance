@@ -54,6 +54,21 @@ def test_gpu_lists_engines_vram_fans_and_driver():
     assert all(s["title"] != "其他讀數" for s in d["sections"])               # 其他 D3D 引擎不列
 
 
+def test_gpu_memory_users_only_over_100_mb():
+    demo = DemoSource(seed=1)
+    tree = demo.read()
+    d = device_details(tree, normalize(tree), "/gpu-nvidia/0", demo.specs(), demo.gpu_processes())
+    titles = [s["title"] for s in d["sections"]]
+    assert titles.index("顯存被誰佔用") == titles.index("顯存") + 1
+    users = section(d, "顯存被誰佔用")["rows"]
+    assert all(r["unit"] in ("MB", "GB") for r in users) and "Discord" not in [r["label"] for r in users]   # 64 MB 不列
+    assert users[0]["label"].startswith("桌面視窗管理員") or users[0]["label"].startswith("python")
+    assert {"label": "RazerAppEngine", "value": 114, "unit": "MB", "note": "PID 20432"} in users
+    none = device_details(tree, normalize(tree), "/gpu-nvidia/0", {}, [{"pid": 1, "name": "x", "bytes": 5}])
+    assert "目前沒有程式超過" in section(none, "顯存被誰佔用")["note"]
+    assert "顯存被誰佔用" not in [s["title"] for s in build("/gpu-nvidia/0")["sections"]]   # 查不到就不列
+
+
 def test_board_shows_bios_fans_with_unplugged_and_voltages():
     d = build("/motherboard")
     spec = rows(section(d, "規格"))

@@ -23,6 +23,7 @@ UNITS = {"Voltage": "V", "Current": "A", "Power": "W", "Clock": "MHz", "Load": "
 DIGITS = {"Voltage": 3, "Current": 2, "Power": 1, "Clock": 0, "Load": 0, "Fan": 0, "Control": 0, "Level": 0, "Factor": 0,
           "SmallData": 0}
 MEDIA_NAMES = {"nvme": "NVMe SSD", "ssd": "SATA SSD", "hdd": "機械硬碟"}
+PROCESS_MIN_BYTES = 100 * 2**20               # 顯存被誰佔用：只列超過 100 MB 的程式（使用者 2026-10-31）
 HEALTH_NAMES = {"healthy": "良好", "warning": "警告", "unhealthy": "不良"}
 
 CPU_HEAD_NOTES = {  # CPU 主溫度：(括號裡的名稱, 說明)
@@ -121,9 +122,10 @@ def _limit(s: RawSensor | None, title: str, note: str) -> dict | None:
 
 
 def _section(title: str, rows: Iterable[dict | None] = (), note: str | None = None, *,
-             table: dict | None = None, bars: dict | None = None) -> dict | None:
+             table: dict | None = None, bars: dict | None = None, keep: bool = False) -> dict | None:
+    """沒有內容的段落不列；keep=True 時只有說明也列（例如「目前沒有程式超過 100 MB」）。"""
     rows = [r for r in rows if r is not None]
-    if not rows and table is None and bars is None:
+    if not rows and table is None and bars is None and not keep:
         return None
     sec: dict = {"title": title}
     if note:
@@ -291,12 +293,19 @@ def _gpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
              _reading(p.one("Load", "GPU Power"), "功耗佔上限", "目前功耗是功耗上限的幾 %"),
              _reading(p.one("Load", "GPU Board Power"), "整卡功耗佔上限"),
              _reading(p.one("Voltage", "GPU Core Voltage", "GPU Core"), "核心電壓")]
+    users = None
+    if specs.get("gpuProcesses") is not None:              # 只有服務查得到時才有（device_details 的 procs）
+        big = [x for x in specs["gpuProcesses"] if x["bytes"] >= PROCESS_MIN_BYTES]
+        rows = [_row(x["name"], *((round(x["bytes"] / 2**30, 1), "GB") if x["bytes"] >= 2**30
+                                  else (round(x["bytes"] / 2**20), "MB")), f'PID {x["pid"]}') for x in big]
+        note = "Windows 統計各程式用掉的專用顯存（跟工作管理員一樣），只列超過 100 MB 的"
+        users = _section("顯存被誰佔用", rows, note if rows else note + "；目前沒有程式超過", keep=True)
     fans = _fan_table(p)
     stopped = fans is not None and all(not r["cells"][0] for r in fans["rows"])
     pcie = [_reading(p.one("Throughput", "GPU PCIe Rx"), "接收"), _reading(p.one("Throughput", "GPU PCIe Tx"), "傳送")]
     return [_section("規格", spec), _section("溫度", temps),
             _section("負載", loads, "3D 是遊戲與繪圖，複製是搬資料，影片編碼／解碼是錄影與播放", bars=bars if engines else None),
-            _section("時脈", clocks), _section("顯存", vram), _section("功耗與電壓", power),
+            _section("時脈", clocks), _section("顯存", vram), users, _section("功耗與電壓", power),
             _section("風扇", (), "溫度低時風扇會停轉（零轉速模式），是正常的" if stopped else None, table=fans),
             _section("PCIe 傳輸", pcie, "顯示卡跟主機板之間的資料量"), _others(p, levels)]
 
@@ -408,8 +417,12 @@ BUILDERS: dict[str, Callable[..., list[dict | None]]] = {
     "cpu": _cpu, "gpu": _gpu, "board": _board, "memory": _memory, "storage": _storage}
 
 
-def device_details(tree: list[RawHardware], snapshot: dict, device_id: str, specs: dict | None = None) -> dict | None:
-    """device_id 是快照 devices 的 id（記憶體是 /ram，代表所有記憶體硬體）。找不到回傳 None。"""
+def device_details(tree: list[RawHardware], snapshot: dict, device_id: str, specs: dict | None = None,
+                   procs: list[dict] | None = None) -> dict | None:
+    """device_id 是快照 devices 的 id（記憶體是 /ram，代表所有記憶體硬體）。找不到回傳 None。
+    procs：佔用顯存的程式 [{pid, name, bytes}]（顯示卡才用得到；None 表示查不到，不列那一段）。"""
+    if procs is not None:
+        specs = {**(specs or {}), "gpuProcesses": procs}
     dev = next((d for d in snapshot.get("devices", []) if d["id"] == device_id), None)
     if dev is None:
         return None

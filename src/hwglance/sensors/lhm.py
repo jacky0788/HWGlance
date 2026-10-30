@@ -249,6 +249,10 @@ class LhmSource:
                 print(f"讀不到規格（{name}）：{e}")
         return out
 
+    def gpu_processes(self) -> list[dict]:
+        """佔用顯存的程式（Windows 效能計數器，不經過 LHM；system.gpu_processes）。"""
+        return system.gpu_processes()
+
     def close(self) -> None:
         if self._computer is not None:
             self._computer.Close()

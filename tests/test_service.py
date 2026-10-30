@@ -68,6 +68,8 @@ def test_service_ticks_into_snapshot_json_and_history():
     assert service.details("/amdcpu/0")["sections"][0]["rows"][1:] == []        # 規格還沒讀：只有型號
     service.load_specs()
     assert service.details("/amdcpu/0")["sections"][0]["rows"][1]["value"] == "AM4"
+    gpu = service.details("/gpu-nvidia/0")
+    assert "顯存被誰佔用" in [s["title"] for s in gpu["sections"]]          # 示範資料也有佔用顯存的程式
 
 
 class BrokenSource:

@@ -31,7 +31,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/ui.py` | 視窗程序（pywebview）：主畫面／迷你視窗（`UiApp.switch`）、網頁按鈕的 `Bridge`、長輪詢本體指令（`poll_commands`）、迷你位置記在 `data/ui-state.json` |
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
-| `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、CPU 快取大小（Windows API）、畫面上的提醒文字 |
+| `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |

@@ -107,6 +107,16 @@ class DemoSource:
             "gpus": {"NVIDIA GeForce RTX 5070 Ti": {"driver": "610.88", "driverDate": "2026-07-22"}},
         }
 
+    def gpu_processes(self) -> list[dict]:
+        """佔用顯存的程式：照 2026-10-31 這台的樣子（dwm 3 GB 最多），再加一個跟著負載變的 ComfyUI。"""
+        load = self._v["gpu_load"]
+        procs = [(1300, "桌面視窗管理員（Windows 畫面）", 3048), (25000, "python（ComfyUI\\main.py）", 400 + 7000 * load),
+                 (31108, "SnippingTool", 441), (30548, "ChatGPT", 343), (27496, "Edge 瀏覽器", 285),
+                 (12416, "檔案總管", 178), (20432, "RazerAppEngine", 114), (8812, "Discord", 64), (4120, "Steam", 22)]
+        procs += [(11676, "HWGlance 這個視窗（WebView2）", 322), (32972, "pythonw（-m projecthub） 的視窗（WebView2）", 130)]
+        return sorted(({"pid": pid, "name": name, "bytes": int(mb * 2**20)} for pid, name, mb in procs),
+                      key=lambda p: -p["bytes"])
+
     def _busy(self, t: float, period: float, phase: float) -> float:
         """0～1 的負載，閒置與高負載交替，加一點雜訊。"""
         x = 0.5 + 0.5 * math.sin(2 * math.pi * (t / period + phase))
