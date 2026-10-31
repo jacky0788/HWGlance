@@ -85,6 +85,12 @@ class SensorService:
         procs = self.gpu_processes() if kind == "gpu" else None
         return device_details(tree, snap, device_id, specs, procs)
 
+    def disk_models(self) -> dict[str, str]:
+        """{磁碟編號: 型號}（開啟後讀的規格）；事件記錄拿來把「硬碟 3」寫成型號。規格還沒讀到就是空的。"""
+        with self._lock:
+            disks = self._specs.get("disks") or {}
+        return {number: d["model"] for number, d in disks.items() if d.get("model")}
+
     def gpu_processes(self) -> list[dict] | None:
         reader = getattr(self.source, "gpu_processes", None)
         if not callable(reader):

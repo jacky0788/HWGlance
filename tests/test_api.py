@@ -9,11 +9,14 @@ from fastapi.testclient import TestClient
 from hwglance import instance, paths
 from hwglance.api.app import create_app
 from hwglance.core import pick_port
+from hwglance.events.demo import DemoEventLog
+from hwglance.events.service import EventService
 from hwglance.sensors.demo import DemoSource
 from hwglance.sensors.service import SensorService
 
 ENV = {"admin": True, "pawnio": "2.2.0"}
 TOKEN = "test-token"
+NOW = 1_793_420_000.0
 
 
 @pytest.fixture
@@ -28,7 +31,9 @@ def client(opened, tmp_path, monkeypatch):
     service = SensorService(DemoSource(seed=1), env=ENV)
     assert service.open()
     service.tick()
-    app = create_app(service, TOKEN, open_ui=opened.append)
+    service.load_specs()
+    events = EventService(DemoEventLog(now=NOW), service.disk_models, clock=lambda: NOW)
+    app = create_app(service, TOKEN, open_ui=opened.append, events=events)
     return TestClient(app, base_url="http://127.0.0.1:8796")
 
 
@@ -57,6 +62,24 @@ def test_device_details(client):
     assert d["name"] == "KIOXIA-EXCERIA G2 SSD" and d["sections"][0]["title"] == "規格"
     assert client.get("/api/device", params={"id": "/nope"}).status_code == 404
     assert client.get("/api/device").status_code == 422
+
+
+def test_events(client):
+    r = client.get("/api/events", params={"days": 90})
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    d = r.json()
+    assert d["days"] == 90 and d["counts"]["bluescreen"] == 4 and d["source"] == "demo"
+    disk = next(i for i in d["incidents"] if i["category"] == "storage")
+    assert disk["title"] == "G:（TOSHIBA DT02ABA400）突然斷線"          # 型號從示範資料的規格來
+    assert client.get("/api/events", params={"days": 0}).json()["days"] is None    # 0 是全部
+    assert client.get("/api/events", params={"days": -1}).status_code == 422
+    assert client.get("/api/events", params={"days": 99999}).status_code == 422
+
+
+def test_events_without_event_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths, "frontend_dist", lambda: tmp_path / "dist")
+    app = create_app(SensorService(DemoSource(seed=1), env=ENV), TOKEN)
+    assert TestClient(app, base_url="http://127.0.0.1:8796").get("/api/events").status_code == 404
 
 
 def test_status(client):

@@ -1,5 +1,5 @@
 // 唯一發請求的地方。token 由後端寫進 index.html（只有改東西的請求需要）。
-import type { DeviceDetail, HistoryWindow, SettingsBody, SettingsPayload, Snapshot } from "../types";
+import type { DeviceDetail, EventReport, HistoryWindow, SettingsBody, SettingsPayload, Snapshot } from "../types";
 
 const token = document.querySelector<HTMLMetaElement>('meta[name="hwglance-token"]')?.content ?? "";
 
@@ -25,6 +25,7 @@ export const api = {
   snapshot: () => request<Snapshot>("/api/snapshot"),
   history: (seconds: number) => request<HistoryWindow>(`/api/history?seconds=${seconds}`),
   device: (id: string) => request<DeviceDetail>(`/api/device?id=${encodeURIComponent(id)}`),
+  events: (days: number) => request<EventReport>(`/api/events?days=${days}`), // 0＝全部
   settings: () => request<SettingsPayload>("/api/settings"),
   saveSettings: (body: SettingsBody) =>
     request<SettingsPayload>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),

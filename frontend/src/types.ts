@@ -143,3 +143,64 @@ export interface DeviceDetail {
   sub: string;
   sections: DetailSection[];
 }
+
+// /api/events?days=（後端 src/hwglance/events/incidents.py 的 incident／report）：事件記錄歸成的一件件事，
+// 欄位改了兩邊一起改。時間都是 epoch 秒，顯示時才換成本地時間。
+export type EventCategory = "crash" | "gpu" | "storage" | "hardware" | "system" | "app";
+export type EventLevel = "hot" | "warm" | "info";
+
+export interface EventLine {
+  time: number; // 第一次
+  last: number; // 最後一次（同一種事件合成一行）
+  count: number;
+  text: string;
+  source: string; // 來源＋事件識別碼，例如「nvlddmkm 13」
+  log: string; // System／Application
+  level: EventLevel;
+  message: string | null; // Windows 記錄的原文（序號已遮掉）
+}
+
+export interface Incident {
+  id: string;
+  category: EventCategory;
+  level: "hot" | "warm";
+  badge: string; // 藍屏、重開、已恢復、斷線…
+  title: string;
+  major: boolean; // 要特別注意的；其他的事件頁收成一行
+  summary: string; // 「FECS 致命錯誤 → TDR 重設 ×101 → 74 秒後驅動重設顯示卡」
+  explain: string[];
+  advice: string[];
+  start: number;
+  end: number;
+  involves: EventCategory[];
+  disks: string[];
+  lines: EventLine[];
+}
+
+export interface EventCounts {
+  bluescreen: number;
+  reset: number; // 沒有藍屏代碼的重開（含強制關機、睡眠恢復失敗、過熱）
+  gpu: number; // 牽涉顯示卡的事件數
+  gpuMajor: number; // 其中要特別注意的
+  storage: number;
+  hardware: number;
+  app: number; // 程式當掉的次數（不是件數）
+}
+
+export interface EventMarker {
+  time: number;
+  kind: "boot" | "shutdown" | "sleep" | "wake";
+  text: string;
+}
+
+export interface EventReport {
+  source: "windows" | "demo";
+  days: number | null; // null＝全部
+  since: number | null;
+  oldest: number | null; // 系統記錄最早的一筆
+  generated: number;
+  counts: EventCounts;
+  incidents: Incident[]; // 新的在前
+  markers: EventMarker[]; // 開關機、睡眠，新的在前
+  errors: string[];
+}

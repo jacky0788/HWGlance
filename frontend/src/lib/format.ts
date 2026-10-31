@@ -60,3 +60,59 @@ export function clockTime(epochSeconds: number | null): string {
   if (epochSeconds == null) return "—";
   return new Date(epochSeconds * 1000).toLocaleTimeString("zh-TW", { hour12: false });
 }
+
+// ---- 事件記錄的時間（本地時間）：「今天 10:10–10:11」「8/22 11:08–14:01」，不是今年才寫年份 ----
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+export function hm(epoch: number): string {
+  const d = new Date(epoch * 1000);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function hms(epoch: number): string {
+  const d = new Date(epoch * 1000);
+  return `${hm(epoch)}:${pad(d.getSeconds())}`;
+}
+
+// now 用後端產生報告的時間，「今天」「昨天」才跟資料對得上
+export function day(epoch: number, now: number): string {
+  const d = new Date(epoch * 1000);
+  const n = new Date(now * 1000);
+  const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const ago = Math.round((midnight(n) - midnight(d)) / 86_400_000);
+  if (ago === 0) return "今天";
+  if (ago === 1) return "昨天";
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return d.getFullYear() === n.getFullYear() ? md : `${d.getFullYear()}/${md}`;
+}
+
+export function when(epoch: number, now: number): string {
+  return `${day(epoch, now)} ${hm(epoch)}`;
+}
+
+export function span(start: number, end: number, now: number): string {
+  const a = when(start, now);
+  const b = when(end, now);
+  if (a === b) return a;
+  return day(start, now) === day(end, now) ? `${a}–${hm(end)}` : `${a} – ${b}`;
+}
+
+export function daySpan(start: number, end: number, now: number): string {
+  const a = day(start, now);
+  const b = day(end, now);
+  return a === b ? a : `${a}–${b}`;
+}
+
+export function fullDate(epoch: number): string {
+  const d = new Date(epoch * 1000);
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// 相隔多久：跟後端 events/incidents.py 的 _gap 一樣的寫法
+export function gap(seconds: number): string {
+  if (seconds < 120) return `${Math.round(seconds)} 秒`;
+  if (seconds < 7200) return `${Math.round(seconds / 60)} 分鐘`;
+  if (seconds < 172_800) return `${Math.round(seconds / 3600)} 小時`;
+  return `${Math.round(seconds / 86400)} 天`;
+}

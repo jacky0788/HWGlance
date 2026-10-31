@@ -1,6 +1,7 @@
 // 設定：溫度單位、更新頻率、關掉視窗後要不要留在系統匣、各種硬體的溫度門檻。
 // 門檻一律用 °C 存（後端 settings.py）；選 °F 時只是顯示與輸入換算。存檔後下一輪讀數就生效。
 import { useEffect, useRef, useState } from "react";
+import { Segmented } from "../../components/Segmented";
 import { api, errorMessage } from "../../lib/api";
 import { fromUnit, toUnit } from "../../lib/format";
 import type { SettingsPayload, Unit } from "../../types";
@@ -9,24 +10,6 @@ type Bands = Record<string, [number, number]>;
 
 function round1(v: number): number {
   return Math.round(v * 10) / 10;
-}
-
-function Segmented<T extends string | number>({ value, options, onChange, label }: {
-  value: T;
-  options: { value: T; text: string }[];
-  onChange: (v: T) => void;
-  label: string;
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex rounded-lg border border-line p-0.5">
-      {options.map((o) => (
-        <button key={o.value} type="button" aria-pressed={o.value === value} onClick={() => onChange(o.value)}
-          className={`rounded-md px-3 py-1 text-sm cursor-pointer ${o.value === value ? "bg-surface-2 text-fg font-semibold" : "text-fg-muted hover:text-fg"}`}>
-          {o.text}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import APP_NAME, instance, paths
 from .api.app import create_app
+from .events.service import EventService
 from .logs import streams_to_log
 from .sensors.service import SensorService
 from .settings import Settings, SettingsStore
@@ -223,12 +224,15 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     streams_to_log("hwglance")
     store = SettingsStore()
     if demo:
+        from .events.demo import DemoEventLog
         from .sensors.demo import DemoSource
-        source = DemoSource()
+        source, event_log = DemoSource(), DemoEventLog()
     else:
+        from .events.reader import WindowsEventLog
         from .sensors.lhm import LhmSource
-        source = LhmSource(paths.lhm_dir())
+        source, event_log = LhmSource(paths.lhm_dir()), WindowsEventLog()
     service = SensorService(source)
+    events = EventService(event_log, service.disk_models)
     apply_settings(service, store.get())
     store.subscribe(lambda s: apply_settings(service, s))
     service.start()
@@ -253,7 +257,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         window.on_exit = window_closed
     server = Server(create_app(service, token, open_ui=window.open if window else None,
                                ui_commands=window.next_commands if window else None,
-                               settings=store, on_quit=quit_event.set), port)
+                               settings=store, on_quit=quit_event.set, events=events), port)
     server.start()
     if not server.wait_ready():
         service.stop()

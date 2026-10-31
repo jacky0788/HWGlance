@@ -4,6 +4,7 @@
     GET  /api/history?seconds=  最近幾秒的溫度、負載、功耗（折線圖用，10～3600 秒）
     GET  /api/sensors           LHM 的原始硬體樹（除錯、「全部感測器」用）
     GET  /api/device?id=        一個硬體的詳細資訊（規格＋所有讀數，分段、中文；sensors/details.py）
+    GET  /api/events?days=      硬體相關的 Windows 事件（當機、顯示卡、硬碟…）歸成一件件事；days=0 是全部（events/）
     GET  /api/status            程式資訊（--activate 用來確認是不是自己）
     GET  /api/settings          設定＋預設值與名稱（設定頁用）
     PUT  /api/settings          存設定（要 token），下一輪讀數就生效
@@ -25,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .. import APP_NAME, __version__, paths
+from ..events.service import EventService
 from ..sensors.service import SensorService
 from ..sensors.thresholds import DEFAULTS, LABELS
 from ..settings import BAND_RANGE, INTERVALS, Settings, SettingsStore
@@ -65,6 +67,7 @@ def create_app(service: SensorService, token: str | None = None,
                ui_commands: Callable[[float], list[dict]] | None = None,
                settings: SettingsStore | None = None,
                on_quit: Callable[[], None] | None = None,
+               events: EventService | None = None,
                allowed_hosts: frozenset[str] = security.LOCAL_HOSTS) -> FastAPI:
     app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token or secrets.token_urlsafe(24)
@@ -89,6 +92,12 @@ def create_app(service: SensorService, token: str | None = None,
         if detail is None:
             return JSONResponse({"detail": "找不到這個硬體"}, status_code=404)
         return JSONResponse(detail, headers=NO_STORE)
+
+    @app.get("/api/events")
+    def event_log(days: int = Query(30, ge=0, le=3650)) -> JSONResponse:
+        if events is None:
+            return JSONResponse({"detail": "這個模式沒有事件記錄"}, status_code=404)
+        return JSONResponse(events.report(days or None), headers=NO_STORE)
 
     @app.get("/api/status")
     def status() -> dict:

@@ -1,7 +1,10 @@
-// 頂端列（名稱＋權限／驅動狀態）、提醒（為什麼有些溫度讀不到）、底部（更新時間、讀取耗時）。
-import { PictureInPicture2, Settings, ShieldAlert, TriangleAlert } from "lucide-react";
+// 頂端列（名稱、即時監控／事件記錄分頁、權限／驅動狀態）、提醒（為什麼有些溫度讀不到）、底部（更新時間、讀取耗時）。
+import { Activity, PictureInPicture2, ScrollText, Settings, ShieldAlert, TriangleAlert } from "lucide-react";
 import { clockTime } from "../../lib/format";
+import type { EventBadge } from "../events/useEvents";
 import type { Snapshot } from "../../types";
+
+export type Page = "live" | "events";
 
 function Chip({ ok, children }: { ok: boolean; children: string }) {
   return (
@@ -15,14 +18,38 @@ function Chip({ ok, children }: { ok: boolean; children: string }) {
 const barButton =
   "inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg-muted hover:border-line-strong hover:text-fg cursor-pointer";
 
-export function TopBar({ snap, onMini, onSettings }: {
+// 分頁用網址的 #live／#events 切換（App.tsx 的 usePage），重新整理或從迷你視窗切回來都還在同一頁
+function PageTabs({ page, badge }: { page: Page; badge: EventBadge | null }) {
+  const tab = (active: boolean) =>
+    `inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${active ? "bg-surface-2 text-fg font-semibold" : "text-fg-muted hover:text-fg"}`;
+  return (
+    <nav aria-label="頁面" className="inline-flex rounded-lg border border-line p-0.5">
+      <a href="#live" aria-current={page === "live" ? "page" : undefined} className={tab(page === "live")}>
+        <Activity className="size-3.5" aria-hidden /> 即時監控
+      </a>
+      <a href="#events" aria-current={page === "events" ? "page" : undefined} className={tab(page === "events")}
+        title={badge?.title}>
+        <ScrollText className="size-3.5" aria-hidden /> 事件記錄
+        {badge ? (
+          <span className={`level-${badge.level} rounded-full bg-(--level-soft) px-1.5 font-semibold text-(--level) num`}>
+            {badge.count}<span className="sr-only"> 件要注意（最近 7 天）</span>
+          </span>
+        ) : null}
+      </a>
+    </nav>
+  );
+}
+
+export function TopBar({ snap, page, badge, onMini, onSettings }: {
   snap: Snapshot | null;
+  page: Page;
+  badge: EventBadge | null;
   onMini: () => void;
   onSettings: () => void;
 }) {
   const source = snap?.source;
   return (
-    <header className="flex items-center gap-3 px-5 py-3 border-b border-line bg-surface">
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 border-b border-line bg-surface">
       <svg viewBox="0 0 32 32" className="size-6 shrink-0" aria-hidden>
         <circle cx="16" cy="16" r="12" fill="none" stroke="var(--track)" strokeWidth={5}
           strokeDasharray="56.5 75.4" transform="rotate(135 16 16)" strokeLinecap="round" />
@@ -30,6 +57,7 @@ export function TopBar({ snap, onMini, onSettings }: {
           strokeDasharray="36 75.4" transform="rotate(135 16 16)" strokeLinecap="round" />
       </svg>
       <h1 className="m-0 text-base font-semibold">HWGlance</h1>
+      <PageTabs page={page} badge={badge} />
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {source?.kind === "demo" ? <Chip ok={false}>示範資料</Chip> : null}
         {source?.kind === "lhm" ? (

@@ -32,13 +32,14 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
 | `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
+| `src/hwglance/events/` | 事件記錄（SPEC D24）：`reader.py` 讀 Windows 事件記錄（wevtapi，ctypes，唯讀）、`catalog.py` 要讀哪些事件（`WATCHED`）與每種的中文說明、藍屏代碼、建議、`incidents.py` 歸成一件件事（純函式）、`demo.py` 照這台 6～10 月的真實記錄、`service.py` 60 秒快取；`tests/test_events.py` |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
 | ProjectHub 的 `registry/hwglance/project.toml` | 登錄到 ProjectHub（只有「啟動」一個按鈕）；要改照 ProjectHub 的 `docs/SOP-edit-project.md` |
-| `frontend/src/pages/` | `Dashboard.tsx` 主畫面、`Mini.tsx` 迷你視窗（`/?view=mini`），只負責排版 |
-| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`status/`（頂端列、提醒、底部）、`settings/`（設定面板） |
-| `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`（給 `onOpen` 就整張可點、標題列有「詳細」按鈕）、`Readout`（數值格與清單列） |
+| `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`，`App.tsx` 的 `usePage` 看網址切換）、`Mini.tsx` 迷你視窗（`/?view=mini`），只負責排版 |
+| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`events/`（事件頁的摘要與篩選、清單（零星的收成一行）、`useEvents.ts` 抓 `/api/events` 與頂端列的 7 天徽章）、`status/`（頂端列與分頁、提醒、底部）、`settings/`（設定面板） |
+| `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`（給 `onOpen` 就整張可點、標題列有「詳細」按鈕）、`Readout`（數值格與清單列）、`Segmented`（分段按鈕） |
 | `frontend/src/lib/` | `api.ts`（唯一發請求的地方）、`useSnapshot.ts`（每秒抓、看不到就停）、`useHistory.ts`、`format.ts`（溫度一律傳 °C 進來，顯示時才換 °F）、`prefs.ts`（溫度單位的 context）、`bridge.ts`（桌面視窗的切換／關閉） |
 | `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot`；硬體種類色 `--kind-*`（外層加 `kind-cpu` 這類 class）用在圖示與裝飾（`--deco`：磚塊色條、儀表、走勢、長條）；**溫度數字只用 `--level`（綠黃紅），不要套種類色**，外框也不要上色（使用者兩次糾正，SPEC D22） |
 
@@ -57,7 +58,9 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
    `frontend/src/lib/useHistory.ts` 的 `valuesOf` 要一樣；`tokens.css` 的 `--bg` → `ui.py` 的 `BACKGROUND`；
    設定欄位 → `settings.py`、`api/app.py` 的 `settings_payload`／`SettingsBody`、`types.ts` 的 `SettingsPayload`；
    新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你視窗的內容變高 → `ui.py` 的 `MINI_SIZE`；
-   詳細資訊的欄位（`details.py`）→ `types.ts` 的 `DeviceDetail`；規格的欄位（`lhm.specs`）→ `demo.specs` 要一樣。
+   詳細資訊的欄位（`details.py`）→ `types.ts` 的 `DeviceDetail`；規格的欄位（`lhm.specs`）→ `demo.specs` 要一樣；
+   事件記錄的欄位（`events/incidents.py` 的 `incident`／`report`）→ `types.ts`；`catalog.WATCHED` 加來源 → 要有對應的規則
+   （`test_watched_covers_every_rule` 會擋）。
 8. commit 不加 AI 署名；repo 自設身分 `HWGlance <jacky0788@users.noreply.github.com>`；使用者說要才 commit。
    遠端是 GitHub 私人 repo `jacky0788/HWGlance`（2026-10-31 建立），使用者說要才 push。
 
@@ -92,6 +95,9 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
   顯示卡驅動查 WMI（`MSFT_PhysicalDisk`、`Win32_VideoController`，非管理員也查得到，在這台試過）。這兩顆機械硬碟 Windows 回報轉速
   4294967295（不知道），所以不顯示轉速。CPU 快取用 `GetLogicalProcessorInformation`（SMBIOS 的 L3 報 32.5 MB，不準）。
   NVIDIA 驅動版本＝Windows 版本的最後五位數（32.0.16.1088 → 610.88）。
+- 事件記錄（2026-10-31）：一般權限讀得到系統與應用程式記錄（agent 自己也能讀，唯讀）；系統記錄 20 MB、最早到 6/11；
+  90 天約 0.9 秒。6008 的「最後運作時間」可能比真的當機早半小時以上，不能當當機時間；即時傾印的 WER 報告可能幾個月後才送，
+  時間看傾印檔名；nvlddmkm 沒有訊息定義（說明在第 2 個資料欄位）。這台的歸類結果在 SPEC「第 6 段①」。
 - Python 3.14.3、pythonnet 3.2.1、pywebview 6.2.1、FastAPI 0.162；前端 React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3。
 - 不靠驅動能讀的只有顯卡（nvidia-smi 非管理員實測 70°C）。WMI 的 ACPI 溫度回「不受支援」、硬碟 SMART 非管理員被拒。
 - **auto mode 擋過 agent 執行下載的 LHM DLL**（理由 Code from External）：真的讀數由使用者跑 `probe.bat`／`run.bat`，
