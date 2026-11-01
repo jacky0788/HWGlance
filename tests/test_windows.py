@@ -1,20 +1,19 @@
-"""視窗控制（core.Window）、視窗程序的指令輪詢（ui.poll_commands）、迷你視窗位置（ui.mini_position）。
-用假的程序與假的找視窗函式，不開真的視窗。"""
+"""視窗控制（core.Window）、主畫面與迷你模式二選一（core.Views）、視窗程序的指令輪詢（ui.poll_commands）。
+用假的程序、假的找視窗函式、假的迷你模式，不開真的視窗。"""
 from __future__ import annotations
 
 import subprocess
 import threading
 import time
-from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from hwglance.api.app import create_app
-from hwglance.core import Window
+from hwglance.core import Views, Window
 from hwglance.sensors.demo import DemoSource
 from hwglance.sensors.service import SensorService
 from hwglance.settings import SettingsStore
-from hwglance.ui import MINI_MARGIN, MINI_SIZE, POLL_FAILURES, TITLES, mini_position, poll_commands
+from hwglance.ui import POLL_FAILURES, TITLES, poll_commands
 
 
 class FakeProc:
@@ -44,6 +43,7 @@ class FakeDesktop:
         self.procs: list[FakeProc] = []
         self.fronted: list[str] = []
         self.closed: list[str] = []
+        self.hidden = False                # 視窗還在、但找不到（例如縮到系統匣的主畫面還沒建好）
 
     def spawn(self, mode: str) -> FakeProc:
         p = FakeProc(mode)
@@ -55,7 +55,7 @@ class FakeDesktop:
 
     def find(self, title: str) -> int:
         p = self.current()
-        return 1 if p is not None and TITLES[p.mode] == title else 0
+        return 1 if p is not None and not self.hidden and TITLES[p.mode] == title else 0
 
     def front(self, hwnd: int) -> None:
         self.fronted.append(self.current().mode)
@@ -90,20 +90,21 @@ def test_open_same_mode_brings_to_front_instead_of_second_window():
     assert [p.mode for p in desk.procs] == ["main"] and desk.fronted == ["main"]
 
 
-def test_open_other_mode_asks_the_window_process_to_switch():
+def test_window_not_found_asks_the_window_process_to_show_itself():
     exits: list[str] = []
     w, desk = make(exits)
     w.open("main")
-    w.open("mini")
+    desk.hidden = True
+    w.open("main")
     assert [p.mode for p in desk.procs] == ["main"]             # 沒有重開程序
-    assert w.next_commands(0.1) == [{"op": "switch", "mode": "mini"}]
+    assert w.next_commands(0.1) == [{"op": "switch", "mode": "main"}]
     assert w.next_commands(0.05) == []                           # 拿走就沒了
 
 
 def test_user_closing_the_window_reports_exit_once_and_reopens_later():
     exits: list[str] = []
     w, desk = make(exits, respawn_gap=0.2)
-    w.open("mini")
+    w.open("main")
     desk.procs[0].exit()
     assert wait_until(lambda: exits == ["exit"])
     assert not w.alive()
@@ -126,17 +127,18 @@ def test_stale_commands_are_dropped_when_a_new_window_starts():
     exits: list[str] = []
     w, desk = make(exits, respawn_gap=0)
     w.open("main")
-    w.open("mini")                           # 排了一個切換，但視窗程序還沒拿就被使用者關掉
+    desk.hidden = True
+    w.open("main")                           # 排了一個叫出來的指令，但視窗程序還沒拿就被使用者關掉
     desk.procs[0].exit()
     assert wait_until(lambda: not w.alive())
     w.open("main")
     assert w.next_commands(0.05) == []
 
 
-def test_unknown_mode_falls_back_to_main():
+def test_window_is_always_the_main_screen():
     exits: list[str] = []
     w, desk = make(exits)
-    w.open("huge")
+    w.open("mini")                           # 迷你模式在本體（core.Views），視窗程序只有主畫面
     assert desk.procs[0].mode == "main"
 
 
@@ -145,9 +147,8 @@ def test_without_webview2_pages_open_in_the_browser():
     opened: list[str] = []
     w, desk = make(exits, webview=False, browser=opened.append)      # 沒有 WebView2：pywebview 會退回 IE，畫面空白
     w.open("main")
-    w.open("mini")
     w.close()
-    assert opened == ["http://127.0.0.1:8796/", "http://127.0.0.1:8796/?view=mini"]
+    assert opened == ["http://127.0.0.1:8796/"]
     assert desk.procs == [] and not w.alive() and exits == []
 
 
@@ -165,9 +166,9 @@ class FakeUi:
 
 def test_poll_commands_follows_switch_and_quit():
     ui = FakeUi()
-    batches = iter([[{"op": "switch", "mode": "mini"}], [], [{"op": "switch", "mode": "main"}, {"op": "quit"}]])
+    batches = iter([[{"op": "switch", "mode": "main"}], [], [{"op": "switch", "mode": "main"}, {"op": "quit"}]])
     poll_commands(ui, "t", fetch=lambda: next(batches))
-    assert ui.calls == ["mini", "main", "quit"]
+    assert ui.calls == ["main", "main", "quit"]
 
 
 def test_poll_commands_gives_up_when_the_core_is_gone(monkeypatch):
@@ -185,7 +186,7 @@ def test_poll_commands_gives_up_when_the_core_is_gone(monkeypatch):
 
 def test_commands_endpoint_needs_token():
     service = SensorService(DemoSource(seed=1), env={"admin": True, "pawnio": None})
-    queued = [{"op": "switch", "mode": "mini"}]
+    queued = [{"op": "switch", "mode": "main"}]
     app = create_app(service, "tok", ui_commands=lambda timeout: queued, settings=SettingsStore())
     c = TestClient(app, base_url="http://127.0.0.1:8796")
     assert c.get("/api/ui/commands", params={"timeout": 0}).status_code == 403
@@ -193,13 +194,38 @@ def test_commands_endpoint_needs_token():
     assert r.json() == {"commands": queued}
 
 
-def screen(x: int, y: int, width: int, height: int) -> SimpleNamespace:
-    return SimpleNamespace(x=x, y=y, width=width, height=height)
+class FakeMini:
+    def __init__(self, ready: bool = True) -> None:
+        self.ready = ready
+        self.visible = False
+        self.calls: list[str] = []
+
+    def show(self) -> None:
+        self.visible = True
+        self.calls.append("show")
+
+    def hide(self) -> None:
+        self.visible = False
+        self.calls.append("hide")
 
 
-def test_mini_position_defaults_to_bottom_right_and_reuses_saved_spot():
-    screens = [screen(0, 0, 1707, 960), screen(1707, 0, 1920, 1080)]
-    w, h = MINI_SIZE
-    assert mini_position(screens, None) == (1707 - w - MINI_MARGIN[0], 960 - h - MINI_MARGIN[1])
-    assert mini_position(screens, [2000, 100]) == (2000, 100)            # 在第二個螢幕裡
-    assert mini_position(screens, [5000, 100]) == mini_position(screens, None)   # 螢幕拔掉了就回右下角
+def test_views_mini_closes_the_main_window_and_main_hides_mini():
+    exits: list[str] = []
+    w, desk = make(exits, respawn_gap=0)
+    mini = FakeMini()
+    views = Views(w, mini)
+    views.open("main")
+    assert mini.calls == ["hide"] and w.alive()
+    views.open("mini")                       # 跟以前切到迷你視窗一樣：主畫面關掉
+    assert mini.visible and wait_until(lambda: not w.alive())
+    assert exits == []                       # 是我們關的，不算使用者關掉（不會整個結束）
+    views.open("main")
+    assert not mini.visible and w.alive() and [p.mode for p in desk.procs] == ["main", "main"]
+
+
+def test_views_fall_back_to_main_when_mini_cannot_start():
+    exits: list[str] = []
+    w, desk = make(exits)
+    views = Views(w, FakeMini(ready=False))  # 不是 Windows、或分層視窗建不起來
+    views.open("mini")
+    assert w.alive() and [p.mode for p in desk.procs] == ["main"]

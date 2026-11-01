@@ -10,7 +10,8 @@ HWGlance＝輕量的硬體溫度監控。介面參考 NZXT CAM，但只留監控
 LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅動讀 CPU 暫存器與主機板 Super I/O，
 透過顯卡驅動的 API 讀 GPU，透過 SMART 讀硬碟。Python 用 pythonnet（netfx）載入 LHM；背景執行緒每秒讀一次、
 整理成快照；FastAPI 只綁 127.0.0.1 把快照給前端。本體還有系統匣（圖示畫 CPU 溫度）。
-視窗是另一個程序（pywebview＋WebView2）：主畫面與迷你視窗在同一個程序裡切換；關掉視窗就整個釋放，本體留在系統匣。
+主畫面是另一個程序（pywebview＋WebView2）：關掉視窗就整個釋放，本體留在系統匣。迷你模式是本體自己的疊加層視窗
+（Win32 分層視窗＋Pillow 畫字，像 RivaTuner：背景可以半透明、字照樣清楚），跟主畫面同時只開一個；遊戲 FPS 用 PresentMon。
 本體要以系統管理員執行才讀得到 CPU／主機板／硬碟（`run.bat` 會自己跳 UAC）；PawnIO 由使用者自己安裝。
 
 ## 程式在哪裡
@@ -28,20 +29,23 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/sensors/guard.py` | 讀取的保險（SPEC D25）：某一類讀失敗或顯示卡驅動報錯 → 停讀那一類（值顯示「—」、畫面上方說明）→ 穩定 1 分鐘後由 `lhm.py` 關掉重開；純邏輯，`tests/test_guard.py` |
 | `src/hwglance/api/` | `app.py` 端點（清單在檔案開頭）、`security.py` Host 檢查與 token |
 | `src/hwglance/settings.py` | 設定 `data/settings.json`：單位、更新頻率、關視窗留在系統匣、門檻、卡片顏色（門檻與顏色只存改過的）；壞掉就用預設 |
-| `src/hwglance/core.py` | 本體：服務＋伺服器＋系統匣＋視窗控制（`Window`：開、叫到前面、排切換指令、結束）、套用設定、選埠 |
+| `src/hwglance/core.py` | 本體：服務＋伺服器＋系統匣＋主畫面的視窗控制（`Window`：開、叫到前面、排指令、結束）＋主畫面與迷你模式二選一（`Views`）、套用設定、選埠 |
 | `src/hwglance/tray.py` | 系統匣（pystray＋Pillow）：圖示畫 CPU 溫度、提示文字、右鍵選單；畫圖與文字是純函式 |
-| `src/hwglance/ui.py` | 視窗程序（pywebview）：主畫面／迷你視窗（`UiApp.switch`）、網頁按鈕的 `Bridge`、長輪詢本體指令（`poll_commands`）、迷你位置記在 `data/ui-state.json` |
+| `src/hwglance/ui.py` | 主畫面的視窗程序（pywebview）：只有主畫面（`UiApp.switch` 叫出來）、長輪詢本體指令（`poll_commands`） |
+| `src/hwglance/mini/` | 迷你模式（SPEC D29）：`items.py` 能顯示什麼、從快照怎麼拿值（純函式）、`render.py` 用 Pillow 畫成有透明度的圖（顏色照 tokens.css 深色，`tests/test_mini.py` 會比對）、`window.py` Win32 分層視窗（自己的執行緒＋訊息迴圈、每個螢幕的 DPI、拖曳、雙擊、右鍵選單、鎖定＝滑鼠穿透，位置記在 `data/mini.json`）、`__init__.py` 的 `MiniMode` 接起來 |
+| `src/hwglance/fps.py` | 遊戲 FPS：跑 PresentMon（`vendor/presentmon`）讀 CSV，前景程式最近 1 秒的 FPS、幀時間、10 秒的 1% Low；只在迷你模式開著、有勾 FPS 時才跑；`DemoFps` 示範用；`tests/test_fps.py` 用假的輸出測 |
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
 | `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、WebView2 版本（沒有就用瀏覽器開）、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
 | `src/hwglance/events/` | 事件記錄（SPEC D24）：`reader.py` 讀 Windows 事件記錄（wevtapi，ctypes，唯讀）、`catalog.py` 要讀哪些事件（`WATCHED`）與每種的中文說明、藍屏代碼、建議、`incidents.py` 歸成一件件事（純函式）、`demo.py` 照這台 6～10 月的真實記錄、`service.py` 60 秒快取、`watch.py` 訂閱顯示卡驅動的新錯誤（一報錯就先停讀顯示卡，`core.py` 接到 `guard`）；`tests/test_events.py` |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
+| `scripts/fetch_presentmon.py` | 從官方 release 取 PresentMon 2.6.0 命令列版（比對 GitHub 公布的 SHA-256）＋LICENSE、THIRD_PARTY，放到 `vendor/presentmon/`（不進 git；`setup.bat` 第一次會跑，失敗只是沒有 FPS） |
 | `scripts/build_portable.py` | 產生可攜版 `build/HWGlance-版本-portable-win64.zip`（SPEC D27）：python.org 嵌入版 Python（跟 venv 同版、比對 SHA-256，`EMBED` 表）＋執行用套件（版本照 venv）＋src、vendor/lhm、frontend/dist、`HWGlance.bat`、`probe.bat`、使用說明與第三方授權；`--no-zip` 只產生資料夾。`build/` 不進 git |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
 | ProjectHub 的 `registry/hwglance/project.toml` | 登錄到 ProjectHub（只有「啟動」一個按鈕）；要改照 ProjectHub 的 `docs/SOP-edit-project.md` |
-| `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`，`App.tsx` 的 `usePage` 看網址切換）、`Mini.tsx` 迷你視窗（`/?view=mini`），只負責排版 |
-| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`events/`（事件頁的摘要與篩選、清單（零星的收成一行）、`BlackBox.tsx` 點開一件事時的黑盒子讀數、`useEvents.ts` 抓 `/api/events` 與頂端列的 7 天徽章）、`status/`（頂端列與分頁、提醒、底部）、`settings/`（設定面板） |
+| `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`，`App.tsx` 的 `usePage` 看網址切換），只負責排版；迷你模式不是網頁（後端 `mini/`），「迷你模式」按鈕是叫 `POST /api/ui/open` |
+| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`events/`（事件頁的摘要與篩選、清單（零星的收成一行）、`BlackBox.tsx` 點開一件事時的黑盒子讀數、`useEvents.ts` 抓 `/api/events` 與頂端列的 7 天徽章）、`status/`（頂端列與分頁、提醒、底部）、`settings/`（設定面板；`MiniSection.tsx` 是迷你模式那一段） |
 | `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`（給 `onOpen` 就整張可點、標題列有「詳細」按鈕）、`Readout`（數值格與清單列）、`Segmented`（分段按鈕） |
 | `frontend/src/lib/` | `api.ts`（唯一發請求的地方）、`useSnapshot.ts`（每秒抓、看不到就停）、`useHistory.ts`、`format.ts`（溫度一律傳 °C 進來，顯示時才換 °F）、`prefs.ts`（溫度單位的 context）、`colors.ts`（設定的卡片顏色寫到 `<html>` 的 `--kind-*`，只寫改過的）、`measures.ts`（數值量的是什麼 → 圖示，卡片與詳細資訊共用）、`bridge.ts`（桌面視窗的切換／關閉） |
 | `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot`；硬體種類色 `--kind-*`（預設指向調色盤 `--swatch-*`，設定頁可換；外層加 `kind-cpu` 這類 class）用在圖示與裝飾（`--deco`：磚塊色條、儀表、走勢、長條）；數值的種類色 `--m-*`（負載、時脈、功耗、風扇、容量，外層加 `m-load` 這類 class，SPEC D28）；**溫度數字只用 `--level`（綠黃紅），不要套種類色**，外框也不要上色（使用者兩次糾正，SPEC D22） |
@@ -60,7 +64,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 7. 連動修改：快照欄位改了 → 同步 `frontend/src/types.ts`；歷史的鍵 → `normalize.history_values` 與
    `frontend/src/lib/useHistory.ts` 的 `valuesOf` 要一樣；`tokens.css` 的 `--bg` → `ui.py` 的 `BACKGROUND`；
    設定欄位 → `settings.py`、`api/app.py` 的 `settings_payload`／`SettingsBody`、`types.ts` 的 `SettingsPayload`；
-   新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你視窗的內容變高 → `ui.py` 的 `MINI_SIZE`；
+   新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你模式的項目 → `mini/items.py` 的 `ITEMS`（設定頁照 `catalog()` 自己列）；
+   `tokens.css` 深色的 `--swatch-*`、`--m-*`、等級色 → `mini/render.py` 的同名表（`test_palette_matches_tokens_css` 會擋）；
    詳細資訊的欄位（`details.py`）→ `types.ts` 的 `DeviceDetail`；規格的欄位（`lhm.specs`）→ `demo.specs` 要一樣；
    調色盤（`settings.COLOR_PRESETS`、`COLOR_DEFAULTS`）→ `tokens.css` 的 `--swatch-*`、`--kind-*` 與 `lib/colors.ts` 的 `PRESET_NAMES`；
    新的 `measure`（`details.MEASURES`）→ `types.ts` 的 `Measure`、`lib/measures.ts`、`index.css` 的 `.m-*`；
@@ -76,12 +81,13 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 |---|---|
 | 使用者開監控 | 雙擊 `run.bat`（第一次會跑 `setup.bat ui`：venv、LHM、建置介面；已經開著就叫出原視窗） |
 | 看這台讀得到哪些感測器 | 使用者雙擊 `probe.bat`（跳 UAC）→ 結果在 `data/probe/probe-日期-時間.txt`，agent 讀這個檔 |
-| 改介面時預覽 | `F:\Desktop\claude_project\.claude\launch.json` 的 `hwglance-demo`（埠 8797，示範資料，設定存在 `data/demo`）；迷你畫面開 `/?view=mini` |
+| 改介面時預覽 | `F:\Desktop\claude_project\.claude\launch.json` 的 `hwglance-demo`（埠 8797，示範資料，設定存在 `data/demo`；它是 `--serve`，沒有迷你模式） |
 | 看顯示卡重設時的畫面 | launch.json 的 `hwglance-demo-gpu-reset`（埠 8798，`--demo-gpu-reset 15`：開啟 15 秒後模擬一次，約 1 分鐘後重新連上） |
 | 看別種電腦的畫面 | launch.json 的 `hwglance-demo-intel`（埠 8799，`--demo-profile intel-laptop`） |
 | 給另一台電腦 | `.venv\Scripts\python.exe scripts\build_portable.py` → `build\` 裡的 zip；改了程式或介面要重新產生（介面先 `npm run build`） |
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
-| 叫出迷你視窗／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden` |
+| 叫出迷你模式／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden` |
+| 看迷你模式（不用系統管理員） | `.venv\Scripts\python.exe -m hwglance --demo --mode mini --port 8811 --data <暫存資料夾>`（示範 FPS，不跑 PresentMon）；截圖要 `ImageGrab.grab(..., include_layered_windows=True)`，用 API 結束 |
 
 ## 環境事實（2026-10-29～31 驗證過）
 
@@ -126,11 +132,12 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 - Python 3.14.3、pythonnet 3.2.1、pywebview 6.2.1、FastAPI 0.162；前端 React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3。
 - 不靠驅動能讀的只有顯卡（nvidia-smi 非管理員實測 70°C）。WMI 的 ACPI 溫度回「不受支援」、硬碟 SMART 非管理員被拒。
 - **auto mode 擋過 agent 執行下載的 LHM DLL**（理由 Code from External）：真的讀數由使用者跑 `probe.bat`／`run.bat`，
-  agent 不要想辦法繞過去自己執行。
+  agent 不要想辦法繞過去自己執行。PresentMon 也一樣：agent 只下載、比對雜湊，不自己跑；拿遊戲實測 FPS 是使用者的事。
 - PowerShell 把 `$null` 傳給 P/Invoke 的 string 參數會變成空字串：`FindWindow` 要傳 `[NullString]::Value`。
 - 截視窗要先 `SetProcessDpiAwarenessContext(-4)`，否則 `GetWindowRect` 拿到縮放過的座標，只截到左上角。
 - 量記憶體看私有工作集（`Win32_PerfFormattedData_PerfProc_Process.WorkingSetPrivate`）；工作集直接加總會重複算共用的 DLL。
-- venv 的 pythonw 會再開一個真正的子程序：找視窗用標題（`HWGlance`／`HWGlance 迷你`），不要用 Popen 的 pid。
+- venv 的 pythonw 會再開一個真正的子程序：找主畫面用標題（`HWGlance`），不要用 Popen 的 pid；迷你模式用類別名稱 `HWGlanceMini` 找。
+  使用者自己開著的 HWGlance 也叫 `HWGlance`：測試時用命令列（`--ui` 加測試的埠，只看 python 程序）分辨是不是自己開的。
 - Claude 桌面版環境有 `NoDefaultCurrentDirectoryInExePath=1`：.bat 裡一律寫完整路徑（`%~dp0…`）。
 - pywebview 6.2.1（WinForms）踩過的坑（2026-10-30）：
   - `webview.start(func=…)` 開的執行緒**不是 daemon**，視窗都關了它還讓程序活著 → 輪詢執行緒自己開 daemon。
@@ -141,4 +148,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
   `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`，用 CDP 執行 JS（正式程式不加這個）。
   PowerShell 變數不分大小寫：`$main` 和 `$MAIN` 是同一個變數（2026-10-30 因此誤判過一次）。
 - 系統匣：工作列是自動隱藏的，截不到；要確認系統匣有開，看本體程序底下有沒有類別名稱含 `SystemTrayIcon` 的視窗。
-- 實測（示範資料）：只剩系統匣時本體約 49 MB 私有記憶體；網頁按鈕切換迷你／主畫面不重開程序，從系統匣叫回主畫面約 0.5 秒。
+- 實測（示範資料）：只剩系統匣時本體約 49 MB 私有記憶體；從系統匣叫回主畫面約 0.5 秒。
+- 透明視窗（2026-11-01 實測）：pywebview＋WebView2 的視窗只能整個一起半透明（`transparent=True`、DWM blur／glass、color key 都透不過去），
+  所以迷你模式用 `UpdateLayeredWindow`＋預乘 BGRA（Pillow 的 `RGBa` 是預乘過的）。全透明的像素滑鼠會穿過去：背景至少留 1/255 才拖得動。
+  在 Pillow 的透明底上直接畫字邊緣會發黑：用灰階遮罩＋顏色圖層 `alpha_composite`。

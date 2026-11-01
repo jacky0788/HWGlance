@@ -1,7 +1,8 @@
 """系統匣圖示：直接畫出 CPU 溫度（沒有就畫 GPU），底色跟著等級；滑過看 CPU、GPU 與有沒有偏高的硬體。
 
 用 pystray（Windows 的 Shell_NotifyIcon）＋Pillow 畫圖。pystray 每換一次圖示會寫一個暫存 ICO，
-所以只有數字或顏色變了才換。左鍵＝開主畫面；右鍵＝選單（主畫面、迷你模式、結束）。
+所以只有數字或顏色變了才換。左鍵＝開主畫面；右鍵＝選單（主畫面、迷你模式（打勾＝開著）、
+鎖定迷你模式（鎖定後滑鼠點不到它，只能從這裡或設定頁解除）、結束）。
 畫圖與提示文字是純函式（tests/test_tray.py 測），Tray 類別才碰 pystray。
 """
 from __future__ import annotations
@@ -75,17 +76,31 @@ def render(text: str, level: str, size: int = ICON_SIZE):
 
 
 class Tray:
-    def __init__(self, on_open: Callable[[str], None], on_quit: Callable[[], None]) -> None:
+    def __init__(self, on_open: Callable[[str], None], on_quit: Callable[[], None], mini=None) -> None:
         import pystray
         self._shown: tuple[str, str] | None = None
         self._tip = "HWGlance"
-        menu = pystray.Menu(
-            pystray.MenuItem("開啟主畫面", lambda: on_open("main"), default=True),
-            pystray.MenuItem("迷你模式", lambda: on_open("mini")),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("結束 HWGlance", lambda: on_quit()),
-        )
+
+        def toggle_mini() -> None:
+            if mini is not None and mini.visible:
+                mini.hide()
+            else:
+                on_open("mini")
+
+        items = [pystray.MenuItem("開啟主畫面", lambda: on_open("main"), default=True),
+                 pystray.MenuItem("迷你模式", toggle_mini, checked=lambda _: bool(mini and mini.visible))]
+        if mini is not None:
+            items.append(pystray.MenuItem("鎖定迷你模式（滑鼠穿透）", lambda: mini.toggle_lock(),
+                                          checked=lambda _: mini.locked))
+        menu = pystray.Menu(*items, pystray.Menu.SEPARATOR, pystray.MenuItem("結束 HWGlance", lambda: on_quit()))
         self.icon = pystray.Icon("HWGlance", render("--", "none"), self._tip, menu)
+
+    def refresh(self) -> None:
+        """迷你模式開關、鎖定改了：選單的勾勾跟著變。"""
+        try:
+            self.icon.update_menu()
+        except Exception:                                 # noqa: BLE001 - 選單沒更新不影響監控
+            traceback.print_exc()
 
     def start(self) -> None:
         threading.Thread(target=self.icon.run, daemon=True, name="hwglance-tray").start()

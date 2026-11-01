@@ -1,7 +1,8 @@
-"""監控本體：感測服務＋只綁 127.0.0.1 的 HTTP 伺服器＋系統匣＋視窗子程序。
+"""監控本體：感測服務＋只綁 127.0.0.1 的 HTTP 伺服器＋系統匣＋主畫面的視窗子程序＋迷你模式。
 
-視窗是另一個程序（python -m hwglance --ui）：關掉視窗時 WebView2 跟著結束、記憶體全部還回去，
+主畫面是另一個程序（python -m hwglance --ui）：關掉視窗時 WebView2 跟著結束、記憶體全部還回去，
 本體留在系統匣繼續讀溫度（設定「關掉視窗時留在系統匣」關掉、或系統匣開不起來時，就整個結束）。
+迷你模式是本體自己的疊加層視窗（mini/）；主畫面與迷你模式同時只開一個（open_ui）。
 結束的方法：系統匣選單「結束 HWGlance」、設定頁的「結束」、或 POST /api/app/quit。
 """
 from __future__ import annotations
@@ -114,11 +115,11 @@ def post_close(hwnd: int) -> None:
 
 
 class Window:
-    """視窗子程序。同時只會有一個，裡面是主畫面或迷你視窗其中一個。
+    """主畫面的視窗子程序。同時只會有一個。
 
-    open(模式)：已經開著那一種就叫到前面；開著另一種就叫視窗程序自己切換（不重開程序，切換是瞬間的，
-    也不用重新初始化 WebView2）；沒開就開。視窗程序用長輪詢 GET /api/ui/commands 拿指令（ui.py 的 poll_commands）。
-    子程序自己結束（使用者關掉視窗）時呼叫 on_exit；是我們叫它結束的就不叫。
+    open()：已經開著就叫到前面（找不到視窗就請視窗程序自己叫出來）；沒開就開。
+    視窗程序用長輪詢 GET /api/ui/commands 拿指令（ui.py 的 poll_commands）。
+    子程序自己結束（使用者關掉視窗）時呼叫 on_exit；是我們叫它結束的（close：結束程式、切到迷你模式）就不叫。
     webview=False（這台沒有 WebView2 Runtime）：不開視窗程序，改用預設瀏覽器開同一個網址。
     """
 
@@ -147,9 +148,10 @@ class Window:
         return self._proc is not None and self._proc.poll() is None
 
     def open(self, mode: str = "main") -> None:
-        mode = mode if mode in TITLES else "main"
-        if not self.webview:                          # 迷你視窗在瀏覽器裡就是 ?view=mini 那一頁
-            self._browser(f"http://127.0.0.1:{self.port}/" + ("?view=mini" if mode == "mini" else ""))
+        """mode 只為了相容（以前還有迷你視窗）；一律是主畫面。"""
+        mode = "main"
+        if not self.webview:
+            self._browser(f"http://127.0.0.1:{self.port}/")
             return
         with self._lock:
             if self.alive():
@@ -218,16 +220,35 @@ class Window:
                                 creationflags=flags, env=env)
 
 
-def start_tray(open_ui: Callable[[str], None], quit_app: Callable[[], None]):
+def start_tray(open_ui: Callable[[str], None], quit_app: Callable[[], None], mini=None):
     """系統匣開不起來（例如 pystray 沒裝好）就回傳 None，程式照樣能用，只是關掉視窗就結束。"""
     try:
         from .tray import Tray
-        tray = Tray(open_ui, quit_app)
+        tray = Tray(open_ui, quit_app, mini)
         tray.start()
         return tray
     except Exception:                                     # noqa: BLE001
         traceback.print_exc()
         return None
+
+
+class Views:
+    """主畫面與迷你模式同時只開一個（跟以前的迷你視窗一樣）：開迷你模式就把主畫面關掉，開主畫面就把迷你模式收起來。
+    迷你模式開不起來（不是 Windows、或建立視窗失敗）就開主畫面。"""
+
+    def __init__(self, window: Window | None, mini=None) -> None:
+        self.window, self.mini = window, mini
+
+    def open(self, mode: str) -> None:
+        if mode == "mini" and self.mini is not None and self.mini.ready:
+            self.mini.show()
+            if self.window is not None and self.window.alive():
+                threading.Thread(target=self.window.close, daemon=True, name="hwglance-close-main").start()
+            return
+        if self.mini is not None:
+            self.mini.hide()
+        if self.window is not None:
+            self.window.open("main")
 
 
 def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
@@ -269,13 +290,11 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     if not webview:
         print(NO_WEBVIEW_HINT[0], flush=True)
     window = None if serve_only else Window(port, token=token, webview=webview)
-    tray = None if serve_only else start_tray(window.open, quit_event.set)
-    if tray is not None and not webview:
-        tray.notify(*NO_WEBVIEW_HINT)
-    if tray is not None:
-        service.subscribe(tray.update)
+    fps = mini = tray = None
+    views = Views(window)
 
     def window_closed() -> None:
+        """使用者關掉主畫面或迷你模式：留在系統匣（第一次提醒一下），或照設定整個結束。"""
         s = store.get()
         if tray is None or not s.close_to_tray:
             quit_event.set()
@@ -283,11 +302,26 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
             tray.notify(*TRAY_HINT)
             store.update(tray_hint_shown=True)
 
+    if not serve_only:
+        from .fps import DemoFps, PresentMonFps
+        from .mini import MiniMode
+        fps = DemoFps() if demo else PresentMonFps(paths.presentmon_dir(), admin=system.is_admin())
+        mini = MiniMode(service, store, fps, on_main=lambda: views.open("main"), on_close=window_closed,
+                        on_change=lambda: tray.refresh() if tray is not None else None)
+        mini.start()
+        views.mini = mini
+        tray = start_tray(views.open, quit_event.set, mini)
+    if tray is not None and not webview:
+        tray.notify(*NO_WEBVIEW_HINT)
+    if tray is not None:
+        service.subscribe(tray.update)
+
     if window is not None:
         window.on_exit = window_closed
-    server = Server(create_app(service, token, open_ui=window.open if window else None,
+    server = Server(create_app(service, token, open_ui=views.open if window else None,
                                ui_commands=window.next_commands if window else None,
-                               settings=store, on_quit=quit_event.set, events=events, blackbox=box), port)
+                               settings=store, on_quit=quit_event.set, events=events, blackbox=box,
+                               fps_status=fps.status if fps is not None else None), port)
     server.start()
     if not server.wait_ready():
         service.stop()
@@ -295,6 +329,8 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
             watch.stop()
         if recorder is not None:
             recorder.stop()
+        if mini is not None:
+            mini.stop()
         if tray is not None:
             tray.stop()
         print("伺服器啟動失敗，看 data/logs/hwglance.log", file=sys.stderr)
@@ -305,7 +341,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         else:
             instance.write(port, token)
             if not hidden or tray is None:
-                window.open(mode)
+                views.open(mode)
         while not quit_event.wait(0.5):
             pass
     except KeyboardInterrupt:
@@ -314,6 +350,8 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         instance.remove()
         if window is not None:
             window.close()
+        if mini is not None:
+            mini.stop()                               # 也停掉 PresentMon
         if tray is not None:
             tray.stop()
         server.stop()

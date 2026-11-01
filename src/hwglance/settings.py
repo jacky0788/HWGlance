@@ -5,6 +5,8 @@
     closeToTray  關掉視窗時留在系統匣繼續監控（False＝整個結束）
     bands        {種類: [偏高, 過熱]}，°C
     colors       {硬體種類: 調色盤的名稱或 #rrggbb}，卡片的顏色（圖示、色條、儀表、走勢）；只存改過的
+    mini         迷你模式：items 要顯示的項目、order 分組順序、opacity 背景不透明度 %、scale 大小 %、
+                 locked 鎖定（滑鼠穿透）；跟預設一樣就不存
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import paths
+from .mini.items import DEFAULT_ITEMS, DEFAULT_ORDER, GROUP_IDS, ITEM_IDS
 from .sensors.thresholds import DEFAULTS, Band
 
 UNITS = ("C", "F")
@@ -26,6 +29,65 @@ COLOR_PRESETS = ("blue", "indigo", "purple", "pink", "teal", "sky", "lime", "sil
 COLOR_DEFAULTS = {"cpu": "blue", "gpu": "purple", "board": "teal", "memory": "pink", "storage": "sky"}
 COLOR_LABELS = {"cpu": "CPU", "gpu": "顯示卡", "board": "主機板", "memory": "記憶體", "storage": "硬碟"}
 HEX_COLOR = re.compile(r"#[0-9a-f]{6}\Z")
+MINI_OPACITY = (0, 100)
+MINI_SCALE = (70, 200)
+
+
+@dataclass(frozen=True)
+class MiniSettings:
+    items: tuple[str, ...] = DEFAULT_ITEMS
+    order: tuple[str, ...] = DEFAULT_ORDER
+    opacity: int = 55                    # 背景不透明度（%）；字永遠不透明
+    scale: int = 100                     # 大小（%）
+    locked: bool = False                 # 鎖定：滑鼠穿透，玩遊戲時點不到它
+
+
+def mini_json(m: MiniSettings) -> dict:
+    return {"items": list(m.items), "order": list(m.order), "opacity": m.opacity, "scale": m.scale,
+            "locked": m.locked}
+
+
+def mini_from(data: object, *, strict: bool = False) -> MiniSettings:
+    """設定檔讀進來時寬鬆（不認得的丟掉、超出範圍的拉回來）；API 存檔時 strict，不合理就丟 ValueError。"""
+    def bad(message: str) -> None:
+        if strict:
+            raise ValueError(message)
+
+    base = MiniSettings()
+    if not isinstance(data, dict):
+        bad("迷你模式的設定格式不對")
+        return base
+    items: list[str] = []
+    raw = data.get("items", list(base.items))
+    for i in raw if isinstance(raw, list) else []:
+        if i not in ITEM_IDS:
+            bad(f"迷你模式不認得的項目：{i}")
+        elif i not in items:
+            items.append(i)
+    order: list[str] = []
+    raw = data.get("order", list(base.order))
+    for g in raw if isinstance(raw, list) else []:
+        if g not in GROUP_IDS:
+            bad(f"迷你模式不認得的分組：{g}")
+        elif g not in order:
+            order.append(g)
+    order += [g for g in DEFAULT_ORDER if g not in order]     # 新加的分組排到最後
+
+    def number(key: str, lo: int, hi: int, default: int, name: str) -> int:
+        value = data.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            bad(f"迷你模式的{name}要是數字")
+            return default
+        if not lo <= value <= hi:
+            bad(f"迷你模式的{name}要在 {lo}～{hi}% 之間")
+        return round(min(hi, max(lo, value)))
+
+    locked = data.get("locked", base.locked)
+    if not isinstance(locked, bool):
+        bad("迷你模式的鎖定要是 true／false")
+        locked = base.locked
+    return MiniSettings(tuple(items), tuple(order), number("opacity", *MINI_OPACITY, base.opacity, "背景不透明度"),
+                        number("scale", *MINI_SCALE, base.scale, "大小"), locked)
 
 
 @dataclass(frozen=True)
@@ -36,6 +98,7 @@ class Settings:
     bands: dict[str, tuple[float, float]] = field(default_factory=dict)   # 只放改過的
     tray_hint_shown: bool = False                                        # 「還在系統匣」的提示顯示過了沒
     colors: dict[str, str] = field(default_factory=dict)                 # 只放改過的
+    mini: MiniSettings = field(default_factory=MiniSettings)
 
     def merged_bands(self) -> dict[str, Band]:
         out = dict(DEFAULTS)
@@ -92,14 +155,18 @@ def parse(data: object) -> Settings:
             if kind in DEFAULTS and valid_band(warm, hot):
                 bands[kind] = (warm, hot)
     colors = color_changes(data["colors"]) if isinstance(data.get("colors"), dict) else {}
+    mini = mini_from(data["mini"]) if "mini" in data else MiniSettings()
     return Settings(unit=unit, interval=interval, close_to_tray=close, bands=only_changes(bands),
-                    tray_hint_shown=hint, colors=colors)
+                    tray_hint_shown=hint, colors=colors, mini=mini)
 
 
 def to_json(s: Settings) -> dict:
-    return {"unit": s.unit, "interval": s.interval, "closeToTray": s.close_to_tray,
-            "bands": {k: list(v) for k, v in s.bands.items()}, "trayHintShown": s.tray_hint_shown,
-            "colors": dict(s.colors)}
+    out = {"unit": s.unit, "interval": s.interval, "closeToTray": s.close_to_tray,
+           "bands": {k: list(v) for k, v in s.bands.items()}, "trayHintShown": s.tray_hint_shown,
+           "colors": dict(s.colors)}
+    if s.mini != MiniSettings():                          # 跟預設一樣就不存：之後改預設，沒動過的人會跟著變
+        out["mini"] = mini_json(s.mini)
+    return out
 
 
 class SettingsStore:
@@ -138,6 +205,8 @@ class SettingsStore:
                 if not valid_color(value.lower() if isinstance(value, str) else value):
                     raise ValueError(f"{COLOR_LABELS[kind]} 的顏色不認得：{value}（要調色盤裡的顏色或 #rrggbb）")
             changes["colors"] = color_changes(changes["colors"])
+        if "mini" in changes and not isinstance(changes["mini"], MiniSettings):
+            changes["mini"] = mini_from(changes["mini"], strict=True)
         if "unit" in changes and changes["unit"] not in UNITS:
             raise ValueError(f"溫度單位只能是 {'、'.join(UNITS)}")
         if "interval" in changes and changes["interval"] not in INTERVALS:

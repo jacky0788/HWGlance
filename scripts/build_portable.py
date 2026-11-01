@@ -6,7 +6,8 @@
 裡面有：
 - python\\：python.org 官方的嵌入版 Python（跟這個 venv 同一版，比對 SHA-256），加上執行要用的套件
   （版本照這個 venv，pip freeze 當限制；測試用的 pytest、httpx 不放）
-- src\\hwglance、vendor\\lhm（LibreHardwareMonitor，MPL-2.0）、frontend\\dist（建好的介面）、assets\\app.ico
+- src\\hwglance、vendor\\lhm（LibreHardwareMonitor，MPL-2.0）、vendor\\presentmon（讀遊戲 FPS，MIT）、
+  frontend\\dist（建好的介面）、assets\\app.ico
 - HWGlance.bat（開監控，會要系統管理員）、probe.bat（探測）、使用說明.txt、第三方授權.txt
 設定、log、黑盒子存在解壓位置的 data\\。這台的開發方式（.venv、run.bat、setup.bat）不受影響。
 """
@@ -113,6 +114,14 @@ GUIDE = """HWGlance 可攜版 {version}
 4. 關掉視窗後還在右下角系統匣繼續監控，圖示上的數字是 CPU 溫度。想開機就跑，可以把 HWGlance.bat 的捷徑
    放進「啟動」資料夾（Win+R 輸入 shell:startup）。
 
+迷你模式（疊在遊戲上的小視窗）
+------------------------------
+主畫面右上角「迷你模式」，或系統匣圖示按右鍵 →「迷你模式」。拖曳移動、雙擊回到主畫面、右鍵有選單。
+要顯示哪些項目（溫度、負載、時脈、功耗、顯存、FPS…）、背景透明度、大小，在主畫面的「設定」裡改。
+「鎖定」之後滑鼠會穿過它（玩遊戲時點不到），要解除就在系統匣圖示按右鍵。
+遊戲 FPS 用 Intel 的 PresentMon 讀（已經附在 vendor\presentmon），要用系統管理員執行 HWGlance。
+它不碰遊戲本身，不會被反作弊誤判；但「獨佔全螢幕」的遊戲會蓋過迷你模式，遊戲改成「無邊框視窗」就看得到。
+
 要讀 CPU、主機板溫度：裝 PawnIO
 -------------------------------
 CPU 與主機板的溫度要 PawnIO 驅動。到 https://pawnio.eu 下載 PawnIO_setup.exe 安裝（要系統管理員），
@@ -163,6 +172,8 @@ def embedded_python() -> Path:
 def ensure_parts() -> None:
     if not (ROOT / "vendor" / "lhm" / "LibreHardwareMonitorLib.dll").is_file():
         run([sys.executable, str(ROOT / "scripts" / "fetch_lhm.py")])
+    if not (ROOT / "vendor" / "presentmon" / "VERSION").is_file():
+        run([sys.executable, str(ROOT / "scripts" / "fetch_presentmon.py")])
     if not (ROOT / "frontend" / "dist" / "index.html").is_file():
         run(["npm", "run", "build"], cwd=ROOT / "frontend", shell=True)
 
@@ -188,7 +199,9 @@ def notices(site: Path) -> str:
     lines = ["HWGlance 用到的第三方元件與授權（各套件的授權全文在 python\\Lib\\site-packages\\*.dist-info）", "",
              "- Python（嵌入版）：PSF License，全文在 python\\LICENSE.txt",
              "- LibreHardwareMonitor 0.9.6：Mozilla Public License 2.0，說明在 vendor\\lhm\\NOTICE.txt，"
-             "原始碼 https://github.com/LibreHardwareMonitor/LibreHardwareMonitor", ""]
+             "原始碼 https://github.com/LibreHardwareMonitor/LibreHardwareMonitor",
+             "- Intel PresentMon 2.6.0（讀遊戲 FPS）：MIT，全文在 vendor\\presentmon\\LICENSE.txt，"
+             "它用到的第三方元件見同一個資料夾的 THIRD_PARTY.txt，原始碼 https://github.com/GameTechDev/PresentMon", ""]
     for dist in sorted(importlib.metadata.distributions(path=[str(site)]), key=lambda d: d.metadata["Name"].lower()):
         meta = dist.metadata
         lic = meta.get("License-Expression") or ""
@@ -230,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copytree(ROOT / "src" / "hwglance", out / "src" / "hwglance", ignore=ignore)
     shutil.copytree(ROOT / "vendor" / "lhm", out / "vendor" / "lhm")
+    shutil.copytree(ROOT / "vendor" / "presentmon", out / "vendor" / "presentmon")
     shutil.copytree(ROOT / "frontend" / "dist", out / "frontend" / "dist")
     (out / "assets").mkdir()
     shutil.copy2(ROOT / "assets" / "app.ico", out / "assets" / "app.ico")

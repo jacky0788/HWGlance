@@ -12,6 +12,9 @@ data/
 # 從官方 release 解出來的 LibreHardwareMonitor（scripts/fetch_lhm.py 會重建）
 vendor/lhm/
 
+# 讀遊戲 FPS 的 PresentMon（scripts/fetch_presentmon.py 會重建）
+vendor/presentmon/
+
 # 前端
 frontend/node_modules/
 frontend/dist/

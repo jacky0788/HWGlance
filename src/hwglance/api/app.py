@@ -32,8 +32,9 @@ from ..events.service import EventService
 from ..sensors.blackbox import BlackBox, DemoBlackBox
 from ..sensors.service import SensorService
 from ..sensors.thresholds import DEFAULTS, LABELS, cpu_band
-from ..settings import (BAND_RANGE, COLOR_DEFAULTS, COLOR_LABELS, COLOR_PRESETS, INTERVALS, Settings,
-                        SettingsStore)
+from ..mini.items import catalog
+from ..settings import (BAND_RANGE, COLOR_DEFAULTS, COLOR_LABELS, COLOR_PRESETS, INTERVALS, MINI_OPACITY, MINI_SCALE,
+                        MiniSettings, Settings, SettingsStore, mini_json)
 from . import security
 
 NO_STORE = {"Cache-Control": "no-store"}
@@ -53,11 +54,12 @@ class SettingsBody(BaseModel):
     closeToTray: bool
     bands: dict[str, tuple[float, float]]
     colors: dict[str, str] | None = None      # 沒帶就不改（舊版介面存檔時不會把顏色洗掉）
+    mini: dict | None = None                  # 同上
 
 
-def settings_payload(s: Settings, tjmax: float | None = None) -> dict:
+def settings_payload(s: Settings, tjmax: float | None = None, fps: str | None = None) -> dict:
     """tjmax：這台 CPU 的 TjMax（Intel 才知道）。CPU 門檻沒改過時，畫面上用的是照它算的（normalize._cpu），
-    設定頁也顯示同一組，「恢復預設」也回到這一組。"""
+    設定頁也顯示同一組，「恢復預設」也回到這一組。fps：FPS 讀不到的原因（None＝讀得到）。"""
     defaults = {**DEFAULTS, "cpu": cpu_band(tjmax)}
     bands = s.merged_bands()
     if "cpu" not in s.bands:
@@ -76,6 +78,11 @@ def settings_payload(s: Settings, tjmax: float | None = None) -> dict:
         "colorDefaults": dict(COLOR_DEFAULTS),
         "colorLabels": dict(COLOR_LABELS),
         "presets": list(COLOR_PRESETS),
+        "mini": mini_json(s.mini),
+        "miniDefaults": mini_json(MiniSettings()),
+        "miniCatalog": catalog(),
+        "miniRange": {"opacity": list(MINI_OPACITY), "scale": list(MINI_SCALE)},
+        "fps": fps,
     }
 
 
@@ -86,6 +93,7 @@ def create_app(service: SensorService, token: str | None = None,
                on_quit: Callable[[], None] | None = None,
                events: EventService | None = None,
                blackbox: BlackBox | DemoBlackBox | None = None,
+               fps_status: Callable[[], str | None] | None = None,
                allowed_hosts: frozenset[str] = security.LOCAL_HOSTS) -> FastAPI:
     app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token or secrets.token_urlsafe(24)
@@ -131,9 +139,12 @@ def create_app(service: SensorService, token: str | None = None,
         return {"app": APP_NAME, "version": __version__, "pid": os.getpid(), "state": snap["state"],
                 "source": snap["source"], "canOpenWindow": open_ui is not None}
 
+    def fps_reason() -> str | None:
+        return fps_status() if fps_status is not None else "這個模式沒有迷你視窗"
+
     @app.get("/api/settings")
     def get_settings() -> JSONResponse:
-        return JSONResponse(settings_payload(store.get(), service.cpu_tjmax()), headers=NO_STORE)
+        return JSONResponse(settings_payload(store.get(), service.cpu_tjmax(), fps_reason()), headers=NO_STORE)
 
     @app.put("/api/settings")
     def put_settings(body: SettingsBody) -> JSONResponse:
@@ -144,11 +155,13 @@ def create_app(service: SensorService, token: str | None = None,
         changes = {"unit": body.unit, "interval": body.interval, "close_to_tray": body.closeToTray, "bands": bands}
         if body.colors is not None:
             changes["colors"] = body.colors
+        if body.mini is not None:
+            changes["mini"] = body.mini
         try:
             saved = store.update(**changes)
         except ValueError as e:
             return JSONResponse({"detail": str(e)}, status_code=400)
-        return JSONResponse(settings_payload(saved, tjmax), headers=NO_STORE)
+        return JSONResponse(settings_payload(saved, tjmax, fps_reason()), headers=NO_STORE)
 
     @app.post("/api/ui/open")
     def ui_open(body: OpenRequest) -> dict:

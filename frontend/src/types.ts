@@ -94,6 +94,26 @@ export interface SettingsPayload {
   colorDefaults: Record<string, string>;
   colorLabels: Record<string, string>;
   presets: string[];
+  mini: MiniSettings;
+  miniDefaults: MiniSettings;
+  miniCatalog: MiniGroup[];
+  miniRange: { opacity: [number, number]; scale: [number, number] };
+  fps: string | null; // FPS 讀不到的原因；null＝讀得到
+}
+
+// 迷你模式（後端 settings.py 的 MiniSettings、mini/items.py 的 catalog）
+export interface MiniSettings {
+  items: string[]; // 要顯示的項目（gpu.temp…）
+  order: string[]; // 分組順序（gpu、cpu…），一組一行
+  opacity: number; // 背景不透明度 %
+  scale: number; // 大小 %
+  locked: boolean; // 滑鼠穿透
+}
+
+export interface MiniGroup {
+  group: string;
+  label: string;
+  items: { id: string; label: string }[];
 }
 
 export interface SettingsBody {
@@ -102,6 +122,7 @@ export interface SettingsBody {
   closeToTray: boolean;
   bands: Record<string, [number, number]>;
   colors: Record<string, string>;
+  mini: MiniSettings;
 }
 
 export interface HistoryWindow {

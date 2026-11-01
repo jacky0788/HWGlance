@@ -6,7 +6,7 @@
 ## 裝到另一台電腦：可攜版（建議）
 
 在這台產生：`.venv\Scripts\python.exe scripts\build_portable.py` → `build\HWGlance-版本-portable-win64.zip`（約 29 MB）。
-裡面有 python.org 官方的嵌入版 Python 與需要的套件、LibreHardwareMonitor、建好的介面，**另一台不用裝 Python、Node.js、git**：
+裡面有 python.org 官方的嵌入版 Python 與需要的套件、LibreHardwareMonitor、PresentMon（遊戲 FPS）、建好的介面，**另一台不用裝 Python、Node.js、git**：
 
 1. 把 zip 解壓到想放的地方，雙擊 `HWGlance.bat`；跳出權限視窗按「是」才讀得到 CPU、主機板、硬碟的溫度。
 2. CPU 與主機板的溫度要 [PawnIO](https://pawnio.eu) 驅動（裝一次，要系統管理員）；沒裝畫面上會提醒。
@@ -21,8 +21,12 @@
 - 需要 Windows 10／11、Python 3.11 以上；第一次建置介面要 Node.js 20 以上
 - 桌面的「HWGlance」捷徑或 `run.bat`：開監控。第一次會建虛擬環境、解出 LibreHardwareMonitor、建置介面；已經開著就叫出原本的視窗。
   捷徑不見了就重建：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\make-shortcut.ps1`。
-- 關掉視窗後還在系統匣繼續監控，圖示上的數字就是 CPU 溫度；左鍵開主畫面、右鍵有迷你模式與結束。
-- 主畫面右上角「迷你模式」換成置頂的小視窗；「設定」可以改溫度單位、更新頻率、各種硬體的溫度門檻與卡片顏色（調色盤或自訂）。
+- 關掉視窗後還在系統匣繼續監控，圖示上的數字就是 CPU 溫度；左鍵開主畫面、右鍵有迷你模式、鎖定迷你模式與結束。
+- 主畫面右上角「迷你模式」換成疊在遊戲上的小視窗（像 RivaTuner）：背景透明度、大小、要顯示的項目（溫度、負載、時脈、功耗、
+  顯存、遊戲 FPS…）都在「設定」裡改；拖曳移動、雙擊回主畫面、右鍵有選單，鎖定後滑鼠會穿過去。
+  遊戲 FPS 用 Intel 的 [PresentMon](https://github.com/GameTechDev/PresentMon)（MIT，第一次 `setup.bat` 會下載），要系統管理員；
+  獨佔全螢幕的遊戲會蓋過迷你模式，遊戲改成無邊框視窗就看得到。
+- 「設定」還可以改溫度單位、更新頻率、各種硬體的溫度門檻與卡片顏色（調色盤或自訂）。
 - `probe.bat`：探測這台電腦讀得到哪些感測器，結果寫到 `data\probe\`。
 
 技術說明、決策與進度見 [docs/SPEC.md](docs/SPEC.md)；給接手的 agent 看 [AGENTS.md](AGENTS.md)。

@@ -4,7 +4,9 @@ rem  HWGlance - first-time setup (safe to run again):
 rem    1. Python virtual environment and packages (.venv)
 rem    2. LibreHardwareMonitor library (vendor\lhm), taken from the
 rem       official release; scripts\fetch_lhm.py checks its SHA-256
-rem    3. The user interface (frontend\dist), only when called as
+rem    3. Intel PresentMon (vendor\presentmon) for game FPS, optional;
+rem       scripts\fetch_presentmon.py checks its SHA-256
+rem    4. The user interface (frontend\dist), only when called as
 rem       "setup.bat ui"
 rem
 rem  ASCII only, CRLF line endings: cmd.exe reads .bat files in the
@@ -34,6 +36,14 @@ echo [HWGlance] Getting LibreHardwareMonitor (official release, 6.3 MB)...
 "%PY%" "%ROOT%scripts\fetch_lhm.py"
 if errorlevel 1 goto lhm_failed
 :have_lhm
+
+rem Game FPS for mini mode: Intel PresentMon (official release, 1 MB).
+rem Optional: without it everything else still works.
+if exist "%ROOT%vendor\presentmon\VERSION" goto have_presentmon
+echo [HWGlance] Getting PresentMon for game FPS (official release, 1 MB)...
+"%PY%" "%ROOT%scripts\fetch_presentmon.py"
+if errorlevel 1 echo [HWGlance] Could not get PresentMon: game FPS will not be shown.
+:have_presentmon
 
 if /i not "%~1"=="ui" goto done
 if exist "%ROOT%frontend\dist\index.html" goto done

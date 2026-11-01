@@ -1,4 +1,4 @@
-// 同一個網頁兩種畫面：主畫面（/）與迷你視窗（/?view=mini）。主畫面有兩頁：即時監控（#live，預設）與事件記錄（#events）。
+// 主畫面有兩頁：即時監控（#live，預設）與事件記錄（#events）。迷你模式不是網頁，是本體的疊加層視窗（後端 mini/）。
 // 溫度單位從快照的 prefs 來，用 context 往下傳；卡片顏色也從 prefs 來，寫在 <html> 上（lib/colors.ts）。
 // 在事件記錄頁時快照照樣每秒抓，切回來折線圖才不會斷。
 import { useEffect, useState } from "react";
@@ -6,14 +6,13 @@ import { useEventBadge } from "../features/events/useEvents";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { TopBar } from "../features/status/StatusBar";
 import type { Page } from "../features/status/StatusBar";
-import { currentView, switchView } from "../lib/bridge";
+import { api } from "../lib/api";
 import { useKindColors } from "../lib/colors";
 import { UnitContext } from "../lib/prefs";
 import { useHistory } from "../lib/useHistory";
 import { useSnapshot } from "../lib/useSnapshot";
 import { Dashboard } from "../pages/Dashboard";
 import { Events } from "../pages/Events";
-import { Mini } from "../pages/Mini";
 
 function pageOf(hash: string): Page {
   return hash === "#events" ? "events" : "live";
@@ -33,7 +32,7 @@ function usePage(): Page {
   return page;
 }
 
-function MainApp() {
+export default function App() {
   const { snap, error } = useSnapshot();
   const series = useHistory(snap);
   const page = usePage();
@@ -47,7 +46,7 @@ function MainApp() {
   return (
     <UnitContext value={snap?.prefs?.unit ?? "C"}>
       <div className="min-h-full flex flex-col">
-        <TopBar snap={snap} page={page} badge={badge} onMini={() => void switchView("mini")}
+        <TopBar snap={snap} page={page} badge={badge} onMini={() => void api.openUi("mini").catch(() => undefined)}
           onSettings={() => setSettingsOpen(true)} />
         {page === "events" ? (
           <Events />
@@ -62,24 +61,4 @@ function MainApp() {
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </UnitContext>
   );
-}
-
-function MiniApp() {
-  const { snap, error } = useSnapshot();
-  useKindColors(snap?.prefs?.colors);
-  useEffect(() => {
-    document.documentElement.classList.add("mini");
-    return () => {
-      document.documentElement.classList.remove("mini");
-    };
-  }, []);
-  return (
-    <UnitContext value={snap?.prefs?.unit ?? "C"}>
-      <Mini snap={snap} offline={error} />
-    </UnitContext>
-  );
-}
-
-export default function App() {
-  return currentView() === "mini" ? <MiniApp /> : <MainApp />;
 }

@@ -1,4 +1,4 @@
-// 設定：溫度單位、更新頻率、關掉視窗後要不要留在系統匣、各種硬體的溫度門檻、卡片顏色。
+// 設定：溫度單位、更新頻率、關掉視窗後要不要留在系統匣、各種硬體的溫度門檻、卡片顏色、迷你模式（MiniSection）。
 // 門檻一律用 °C 存（後端 settings.py）；選 °F 時只是顯示與輸入換算。存檔後下一輪讀數就生效。
 // 顏色點了馬上預覽（寫到 <html> 上），按取消或關掉就換回存過的。
 import { useEffect, useRef, useState } from "react";
@@ -6,7 +6,8 @@ import { Segmented } from "../../components/Segmented";
 import { api, errorMessage } from "../../lib/api";
 import { PRESET_NAMES, applyKindColors, changedColors, swatchHex } from "../../lib/colors";
 import { fromUnit, toUnit } from "../../lib/format";
-import type { SettingsPayload, Unit } from "../../types";
+import type { MiniSettings, SettingsPayload, Unit } from "../../types";
+import { MiniSection } from "./MiniSection";
 
 type Bands = Record<string, [number, number]>;
 
@@ -57,6 +58,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [closeToTray, setCloseToTray] = useState(true);
   const [bands, setBands] = useState<Bands>({});
   const [colors, setColors] = useState<Record<string, string>>({});
+  const [mini, setMini] = useState<MiniSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [quitting, setQuitting] = useState(false);
@@ -95,6 +97,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         setCloseToTray(s.closeToTray);
         setBands(s.bands);
         setColors(s.colors);
+        setMini(s.mini);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errorMessage(e));
@@ -130,7 +133,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     }
     setSaving(true);
     try {
-      await api.saveSettings({ unit, interval: refresh, closeToTray, bands, colors });
+      await api.saveSettings({ unit, interval: refresh, closeToTray, bands, colors, mini: mini ?? data.mini });
       committed.current = changedColors(colors, data.colorDefaults);
       onClose();
     } catch (e) {
@@ -222,6 +225,9 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 ))}
               </div>
             </section>
+
+            <MiniSection value={mini ?? data.mini} defaults={data.miniDefaults} catalog={data.miniCatalog}
+              range={data.miniRange} fps={data.fps} onChange={setMini} />
             {error ? <p role="alert" className="m-0 text-sm text-hot">{error}</p> : null}
           </div>
         )}

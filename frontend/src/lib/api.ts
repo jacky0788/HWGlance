@@ -33,6 +33,9 @@ export const api = {
   saveSettings: (body: SettingsBody) =>
     request<SettingsPayload>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
   quit: () => request<{ ok: boolean }>("/api/app/quit", { method: "POST" }),
+  // 迷你模式是本體的疊加層視窗：本體顯示它，再把這個主畫面關掉（瀏覽器開的就留著）
+  openUi: (mode: "main" | "mini") =>
+    request<{ ok: boolean; detail?: string }>("/api/ui/open", { method: "POST", body: JSON.stringify({ mode }) }),
 };
 
 export function errorMessage(e: unknown): string {

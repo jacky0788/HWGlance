@@ -44,11 +44,6 @@ body {
   outline-offset: 0.125rem;
 }
 
-/* 迷你視窗（pages/Mini.tsx）：視窗大小固定，不要捲軸 */
-.mini body {
-  overflow: hidden;
-}
-
 /* 數字等寬，每秒更新時不會左右跳 */
 .num {
   font-variant-numeric: tabular-nums;

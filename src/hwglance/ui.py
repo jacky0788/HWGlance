@@ -1,9 +1,9 @@
 """視窗子程序：pywebview（Windows 走 WebView2）包住 http://127.0.0.1:<埠>/。由本體（core.py）開，不單獨跑。
 
-不打包瀏覽器：WebView2 是 Windows 內建的 Edge 核心。同一個程序裡只會有主畫面或迷你視窗其中一個；
-網頁上的「迷你模式」「展開」按鈕呼叫 window.pywebview.api.switch()，在這裡先開新的、再關舊的（不重開程序）。
-系統匣、run.bat 要切換或結束時，本體把指令排進佇列，這裡用長輪詢 GET /api/ui/commands 拿（poll_commands）；
-連續幾次連不上本體就自己關掉，視窗不會比本體活得久。最後一個視窗關掉，這個程序就結束（WebView2 一起結束）。
+不打包瀏覽器：WebView2 是 Windows 內建的 Edge 核心。這個程序只有主畫面；迷你模式是本體自己的疊加層視窗
+（mini/，不用 WebView2）。網頁上按「迷你模式」是叫本體的 API，本體顯示疊加層、再叫這個程序結束。
+系統匣、run.bat 要叫出或結束時，本體把指令排進佇列，這裡用長輪詢 GET /api/ui/commands 拿（poll_commands）；
+連續幾次連不上本體就自己關掉，視窗不會比本體活得久。視窗關掉，這個程序就結束（WebView2 一起結束）。
 """
 from __future__ import annotations
 
@@ -23,11 +23,9 @@ POLL_TIMEOUT = 25.0                   # 長輪詢一次最多等幾秒
 POLL_FAILURES = 3                     # 連續幾次連不上本體就結束
 EXIT_GRACE = 5.0                      # 最後一個視窗關掉後，最多再等幾秒就強制結束程序
 
-TITLES = {"main": APP_NAME, "mini": f"{APP_NAME} 迷你"}     # core.py 用標題找視窗
+TITLES = {"main": APP_NAME}           # core.py 用標題找視窗
 MIN_SIZE = (760, 560)
 SCREEN_SHARE = (0.58, 0.82)          # 主畫面佔螢幕的比例（寬、高），不寫死像素
-MINI_SIZE = (340, 112)               # 迷你視窗（邏輯像素），剛好放得下兩格＋一行摘要
-MINI_MARGIN = (24, 72)               # 預設放在右下角，離螢幕邊緣（右、下）多遠；下面要讓出工作列
 APP_ID = "jacky0788.HWGlance"        # Windows 工具列的身分
 BACKGROUND = {True: "#0f1115", False: "#f3f4f7"}   # 跟 tokens.css 的 --bg 一樣，網頁載入前不閃白
 
@@ -62,102 +60,37 @@ def window_size(webview) -> tuple[int, int]:
     return max(w, MIN_SIZE[0]), max(h, MIN_SIZE[1])
 
 
-def read_state() -> dict:
-    try:
-        data = json.loads(paths.ui_state_file().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def write_state(state: dict) -> None:
-    try:
-        f = paths.ui_state_file()
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(state), encoding="utf-8")
-    except OSError:
-        pass
-
-
-def mini_position(screens, saved: object, size: tuple[int, int] = MINI_SIZE) -> tuple[int, int]:
-    """上次的位置（還在某個螢幕裡的話）；不然放主螢幕右下角。座標都是邏輯像素。"""
-    w, h = size
-    if isinstance(saved, (list, tuple)) and len(saved) == 2:
-        x, y = int(saved[0]), int(saved[1])
-        for s in screens:
-            if s.x <= x and s.y <= y and x + w <= s.x + s.width and y + h <= s.y + s.height:
-                return x, y
-    main = screens[0]
-    return main.x + main.width - w - MINI_MARGIN[0], main.y + main.height - h - MINI_MARGIN[1]
-
-
-class Bridge:
-    """網頁按鈕叫得到的函式：window.pywebview.api.switch('mini')、.close()。每個視窗各一個。
-
-    動作交給另一條執行緒、這裡馬上回傳：這個呼叫來自「要被關掉的那個視窗」，如果等它關掉才回傳，
-    pywebview 回傳結果的執行緒會永遠等下去，程序就結束不了（2026-10-30 實測）。"""
-
-    def __init__(self, app: UiApp, mode: str) -> None:
-        self._app = app
-        self._mode = mode
-
-    def switch(self, mode: str) -> bool:
-        threading.Thread(target=self._app.switch, args=(mode,), daemon=True).start()
-        return True
-
-    def close(self) -> bool:
-        threading.Thread(target=self._app.close, args=(self._mode,), daemon=True).start()
-        return True
-
-
 class UiApp:
     def __init__(self, port: int) -> None:
         self.port = port
         self.windows: dict[str, object] = {}
         self._lock = threading.Lock()
-        self._state = read_state()
         self._dark = system_is_dark()
 
     def url(self, mode: str) -> str:
-        return f"http://127.0.0.1:{self.port}/" + ("?view=mini" if mode == "mini" else "")
+        return f"http://127.0.0.1:{self.port}/"
 
-    def create(self, mode: str):
+    def create(self, mode: str = "main"):
         import webview
-        if mode == "mini":
-            w, h = MINI_SIZE
-            x, y = mini_position(webview.screens, self._state.get("mini"))
-            win = webview.create_window(TITLES["mini"], self.url("mini"), js_api=Bridge(self, "mini"),
-                                        width=w, height=h, x=x, y=y, min_size=MINI_SIZE, resizable=False,
-                                        frameless=True, easy_drag=False, on_top=True,
-                                        background_color=BACKGROUND[self._dark])
-            win.events.moved += self._remember_mini
-        else:
-            width, height = window_size(webview)
-            win = webview.create_window(TITLES["main"], self.url("main"), js_api=Bridge(self, "main"),
-                                        width=width, height=height, min_size=MIN_SIZE,
-                                        background_color=BACKGROUND[self._dark])
-        win.events.closed += lambda: self._closed(mode)
-        self.windows[mode] = win
-        print(f"[{time.strftime('%X')}] 開了 {mode} 視窗", flush=True)
+        width, height = window_size(webview)
+        win = webview.create_window(TITLES["main"], self.url("main"), width=width, height=height, min_size=MIN_SIZE,
+                                    background_color=BACKGROUND[self._dark])
+        win.events.closed += lambda: self._closed("main")
+        self.windows["main"] = win
+        print(f"[{time.strftime('%X')}] 開了主畫面", flush=True)
         return win
 
-    def switch(self, mode: str) -> None:
-        """先開新的、再關舊的（反過來的話最後一個視窗一關，整個程序就結束了）。"""
-        if mode not in TITLES:
-            return
+    def switch(self, mode: str = "main") -> None:
+        """本體叫出主畫面：已經開著就還原、拉到前面（以前還要切迷你視窗，現在迷你模式在本體）。"""
         with self._lock:
-            existing = self.windows.get(mode)
-            others = [w for m, w in self.windows.items() if m != mode]
-            print(f"[{time.strftime('%X')}] 切換到 {mode}：已開 {list(self.windows)}", flush=True)
+            existing = self.windows.get("main")
             if existing is None:
-                self.create(mode)
+                self.create("main")
         if existing is not None:
             existing.restore()
             existing.show()
-        for w in others:
-            w.destroy()
 
-    def close(self, mode: str) -> None:
+    def close(self, mode: str = "main") -> None:
         win = self.windows.get(mode)
         if win is not None:
             win.destroy()
@@ -166,16 +99,11 @@ class UiApp:
         for win in list(self.windows.values()):
             win.destroy()
 
-    def _remember_mini(self, x: int, y: int) -> None:
-        self._state["mini"] = [x, y]
-
     def _closed(self, mode: str) -> None:
         print(f"[{time.strftime('%X')}] 關了 {mode} 視窗", flush=True)
         with self._lock:
             self.windows.pop(mode, None)
-            last = not self.windows                  # 切換時新視窗先開，所以這裡不會是空的
-        if mode == "mini":
-            write_state(self._state)
+            last = not self.windows
         if last:
             threading.Thread(target=self._exit_soon, daemon=True).start()
 
@@ -188,7 +116,7 @@ class UiApp:
 
 
 def poll_commands(app: UiApp, token: str, fetch=None) -> None:
-    """拿本體的指令來做：{"op": "switch", "mode": …}、{"op": "quit"}。本體不在了（連續連不上）就結束。"""
+    """拿本體的指令來做：{"op": "switch", "mode": "main"}（叫出主畫面）、{"op": "quit"}。本體不在了（連續連不上）就結束。"""
     url = f"http://127.0.0.1:{app.port}/api/ui/commands?timeout={POLL_TIMEOUT:g}"
 
     def default_fetch() -> list[dict]:
@@ -227,12 +155,12 @@ def run(port: int, mode: str = "main") -> int:
         print("桌面視窗需要 pywebview；或改用瀏覽器：python -m hwglance --serve", file=sys.stderr)
         return 1
     app = UiApp(port)
-    first = app.create(mode if mode in TITLES else "main")
+    first = app.create("main")
     token = os.environ.get("HWGLANCE_TOKEN", "")
     if token:
         # 不用 webview.start(func=…)：那條執行緒不是 daemon，視窗都關了它還會讓程序活著
         def start_polling() -> None:
-            first.events.shown.wait(15)              # 等視窗出來（訊息迴圈跑起來）才能在別的執行緒開新視窗
+            first.events.shown.wait(15)              # 等視窗出來（訊息迴圈跑起來）才能在別的執行緒動視窗
             poll_commands(app, token)
 
         threading.Thread(target=start_polling, daemon=True, name="hwglance-commands").start()

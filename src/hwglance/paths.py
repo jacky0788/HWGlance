@@ -39,14 +39,19 @@ def settings_file() -> Path:
     return data_dir() / "settings.json"
 
 
-def ui_state_file() -> Path:
-    """視窗程序自己記的東西（迷你視窗的位置）。"""
-    return data_dir() / "ui-state.json"
+def mini_state_file() -> Path:
+    """迷你模式（疊加層）的位置，螢幕的實際像素（mini/window.py）。"""
+    return data_dir() / "mini.json"
 
 
 def lhm_dir() -> Path:
     """LibreHardwareMonitorLib 與相依的 DLL（scripts/fetch_lhm.py 解出來）：`HWGLANCE_LHM` 優先。"""
     return _env_path("HWGLANCE_LHM", APP_ROOT / "vendor" / "lhm")
+
+
+def presentmon_dir() -> Path:
+    """讀遊戲 FPS 的 PresentMon（scripts/fetch_presentmon.py 下載）：`HWGLANCE_PRESENTMON` 優先。"""
+    return _env_path("HWGLANCE_PRESENTMON", APP_ROOT / "vendor" / "presentmon")
 
 
 def frontend_dist() -> Path:

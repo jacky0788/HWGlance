@@ -25,6 +25,8 @@ def test_bat_files_are_ascii_crlf():
         data = f.read_bytes()
         assert all(b < 128 for b in data), f"{f.name} 只能有 ASCII（cmd.exe 用系統碼頁讀 .bat）"
         assert b"\n" not in data.replace(b"\r\n", b""), f"{f.name} 要用 CRLF 換行"
+        # 用 Python 字串寫 .bat 時 "scripts\fetch…" 的 \f 會變成換頁字元（2026-11-02 踩過）
+        assert not [b for b in data if b < 32 and b not in (9, 10, 13)], f"{f.name} 有控制字元"
 
 
 def test_no_px_in_frontend():
