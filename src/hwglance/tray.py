@@ -87,11 +87,16 @@ class Tray:
             else:
                 on_open("mini")
 
+        def with_key(text: str, action: str) -> str:
+            key = mini.hotkey(action) if mini is not None else None
+            return f"{text}（{key}）" if key else text
+
         items = [pystray.MenuItem("開啟主畫面", lambda: on_open("main"), default=True),
-                 pystray.MenuItem("迷你模式", toggle_mini, checked=lambda _: bool(mini and mini.visible))]
+                 pystray.MenuItem(with_key("迷你模式", "開關迷你模式"), toggle_mini,
+                                  checked=lambda _: bool(mini and mini.visible))]
         if mini is not None:
-            items.append(pystray.MenuItem("鎖定迷你模式（滑鼠穿透）", lambda: mini.toggle_lock(),
-                                          checked=lambda _: mini.locked))
+            items.append(pystray.MenuItem(with_key("鎖定迷你模式：滑鼠穿透", "鎖定／解除鎖定"),
+                                          lambda: mini.toggle_lock(), checked=lambda _: mini.locked))
         menu = pystray.Menu(*items, pystray.Menu.SEPARATOR, pystray.MenuItem("結束 HWGlance", lambda: on_quit()))
         self.icon = pystray.Icon("HWGlance", render("--", "none"), self._tip, menu)
 

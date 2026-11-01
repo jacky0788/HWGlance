@@ -16,6 +16,7 @@ from hwglance.mini import MiniMode
 from hwglance.mini.items import DEFAULT_ITEMS, DEFAULT_ORDER, ITEM_IDS, catalog, rows
 from hwglance.mini.render import (BG, FG, LEVELS, MEASURES, MUTED, SWATCHES, _hex, _oklab, kind_color, lighten,
                                   render)
+from hwglance.mini.window import fit
 from hwglance.sensors.demo import DemoSource
 from hwglance.sensors.normalize import normalize
 from hwglance.sensors.service import SensorService
@@ -139,10 +140,12 @@ def test_mini_settings_are_lenient_on_disk_and_strict_in_the_api():
 def test_settings_api_has_the_catalog_and_fps_status():
     service = SensorService(DemoSource(seed=1), env={"admin": True, "pawnio": "2.2.0"})
     assert service.open()
-    app = create_app(service, "t", settings=SettingsStore(), fps_status=lambda: "還沒有 PresentMon")
+    hotkeys = [{"keys": "Ctrl+Alt+L", "action": "鎖定／解除鎖定", "ok": False}]
+    app = create_app(service, "t", settings=SettingsStore(),
+                     mini_info=lambda: {"fps": "還沒有 PresentMon", "hotkeys": hotkeys})
     c = TestClient(app, base_url="http://127.0.0.1:8796")
     s = c.get("/api/settings").json()
-    assert s["mini"] == s["miniDefaults"] and s["fps"] == "還沒有 PresentMon"
+    assert s["mini"] == s["miniDefaults"] and s["fps"] == "還沒有 PresentMon" and s["hotkeys"] == hotkeys
     assert s["miniCatalog"][0]["group"] == "gpu" and s["miniRange"] == {"opacity": [0, 100], "scale": [70, 200]}
     body = {"unit": "C", "interval": 1, "closeToTray": True, "bands": s["bands"],
             "mini": {**s["mini"], "opacity": 20, "items": ["time.clock"]}}
@@ -153,9 +156,13 @@ def test_settings_api_has_the_catalog_and_fps_status():
 
 
 class FakeWindow:
-    def __init__(self, frame, *, state_file, on_main, on_close, on_lock, locked) -> None:
+    def __init__(self, frame, *, state_file, on_main, on_close, on_lock, locked, on_toggle=None,
+                 on_settings=None) -> None:
         self.frame, self.on_close, self.on_lock = frame, on_close, on_lock
+        self.on_toggle, self.on_settings = on_toggle, on_settings
         self.visible, self.locked, self.refreshes = False, locked, 0
+        self.hotkeys = [{"keys": "Ctrl+Alt+L", "action": "鎖定／解除鎖定", "ok": True},
+                        {"keys": "Ctrl+Alt+M", "action": "開關迷你模式", "ok": True}]
 
     def start(self) -> bool:
         return True
@@ -203,3 +210,38 @@ def test_mini_mode_draws_from_settings_and_runs_fps_only_when_needed():
     assert window.locked and store.get().mini.locked
     window.on_close()                                    # 右鍵「關閉迷你模式」
     assert not mini.visible and closed == [1] and fps.wants[-1] is False
+
+
+def test_locking_tells_how_to_unlock_once():
+    """鎖定後滑鼠碰不到它：第一次鎖定時用系統匣通知說怎麼解除（使用者 2026-11-02：鎖了之後什麼都改不了），
+    之後不再跳（同一天：每次都跳很吵）。"""
+    service = SensorService(DemoSource(seed=1), env={"admin": True, "pawnio": None})
+    store, notes, toggled, settings = SettingsStore(), [], [], []
+    mini = MiniMode(service, store, CountingFps(), on_main=lambda: None, on_close=lambda: None,
+                    on_toggle=lambda: toggled.append(1), on_settings=lambda: settings.append(1),
+                    notify=lambda message, title: notes.append((title, message)), window_factory=FakeWindow)
+    assert mini.hotkey("鎖定／解除鎖定") == "Ctrl+Alt+L"
+    mini.toggle_lock()
+    assert len(notes) == 1 and notes[0][0] == "迷你模式已鎖定" and "Ctrl+Alt+L" in notes[0][1]
+    assert store.get().mini_lock_hint_shown and store.get().mini.locked
+    store.update(unit="F")                               # 其他設定改了：不提醒
+    mini.toggle_lock()
+    mini.toggle_lock()
+    assert len(notes) == 1                               # 只提醒第一次：每次鎖定都跳很吵（使用者 2026-11-02）
+    again = MiniMode(service, SettingsStore(), CountingFps(), on_main=lambda: None, on_close=lambda: None,
+                     notify=lambda message, title: notes.append((title, message)), window_factory=FakeWindow)
+    again.toggle_lock()
+    again.toggle_lock()
+    assert len(notes) == 1                               # 重開之後也不再提醒（存在設定檔）
+    window = mini._window
+    window.on_toggle()
+    window.on_settings()
+    assert toggled == [1] and settings == [1]            # 快速鍵、右鍵「迷你模式設定…」接到外面
+
+
+def test_fit_pulls_the_box_back_on_screen():
+    work = (0, 0, 1920, 1040)                            # 工作區（扣掉工作列）
+    assert fit(100, 100, 300, 200, work) == (100, 100)
+    assert fit(4519 - 3840, -113, 300, 200, work) == (679, 0)          # 上面跑出去一截（使用者 2026-11-02 的位置）
+    assert fit(1800, 950, 300, 200, work) == (1620, 840)               # 右下角超出
+    assert fit(-50, 10, 3000, 200, work) == (0, 10)                    # 比螢幕還寬就對齊左邊

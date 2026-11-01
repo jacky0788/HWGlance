@@ -86,7 +86,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | 看別種電腦的畫面 | launch.json 的 `hwglance-demo-intel`（埠 8799，`--demo-profile intel-laptop`） |
 | 給另一台電腦 | `.venv\Scripts\python.exe scripts\build_portable.py` → `build\` 裡的 zip；改了程式或介面要重新產生（介面先 `npm run build`） |
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
-| 叫出迷你模式／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden` |
+| 叫出迷你模式／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden`；快速鍵 Ctrl+Alt+M 開關、Ctrl+Alt+L 鎖定／解除 |
+| 使用者的迷你模式鎖住了、找不到系統匣 | 本機 API：GET `/api/settings`，把 `mini.locked` 改成 false 用 PUT 存回去（token 在 `data/instance.json`），其他欄位照原樣帶 |
 | 看迷你模式（不用系統管理員） | `.venv\Scripts\python.exe -m hwglance --demo --mode mini --port 8811 --data <暫存資料夾>`（示範 FPS，不跑 PresentMon）；截圖要 `ImageGrab.grab(..., include_layered_windows=True)`，用 API 結束 |
 
 ## 環境事實（2026-10-29～31 驗證過）
@@ -137,6 +138,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 - 截視窗要先 `SetProcessDpiAwarenessContext(-4)`，否則 `GetWindowRect` 拿到縮放過的座標，只截到左上角。
 - 量記憶體看私有工作集（`Win32_PerfFormattedData_PerfProc_Process.WorkingSetPrivate`）；工作集直接加總會重複算共用的 DLL。
 - venv 的 pythonw 會再開一個真正的子程序：找主畫面用標題（`HWGlance`），不要用 Popen 的 pid；迷你模式用類別名稱 `HWGlanceMini` 找。
+  使用者自己開著的新版也有 `HWGlanceMini`：測試時用 EnumWindows＋程序樹（自己開的程序與它的子程序）分辨。
   使用者自己開著的 HWGlance 也叫 `HWGlance`：測試時用命令列（`--ui` 加測試的埠，只看 python 程序）分辨是不是自己開的。
 - Claude 桌面版環境有 `NoDefaultCurrentDirectoryInExePath=1`：.bat 裡一律寫完整路徑（`%~dp0…`）。
 - pywebview 6.2.1（WinForms）踩過的坑（2026-10-30）：

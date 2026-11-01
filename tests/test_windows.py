@@ -55,7 +55,7 @@ class FakeDesktop:
 
     def find(self, title: str) -> int:
         p = self.current()
-        return 1 if p is not None and not self.hidden and TITLES[p.mode] == title else 0
+        return 1 if p is not None and not self.hidden and title == TITLES["main"] else 0
 
     def front(self, hwnd: int) -> None:
         self.fronted.append(self.current().mode)
@@ -221,6 +221,32 @@ def test_views_mini_closes_the_main_window_and_main_hides_mini():
     assert exits == []                       # 是我們關的，不算使用者關掉（不會整個結束）
     views.open("main")
     assert not mini.visible and w.alive() and [p.mode for p in desk.procs] == ["main", "main"]
+
+
+def test_settings_opens_the_main_window_on_the_mini_section():
+    exits: list[str] = []
+    w, desk = make(exits, respawn_gap=0)
+    mini = FakeMini()
+    views = Views(w, mini)
+    views.open("settings")                   # 迷你模式右鍵的「迷你模式設定…」
+    assert [p.mode for p in desk.procs] == ["settings"] and mini.calls == ["hide"]
+    views.open("settings")                   # 已經開著：拉到前面，再請視窗程序打開設定頁
+    assert desk.fronted == ["settings"] and w.next_commands(0.1) == [{"op": "switch", "mode": "settings"}]
+    opened: list[str] = []
+    browser, _ = make(exits, webview=False, browser=opened.append)
+    browser.open("settings")
+    assert opened == ["http://127.0.0.1:8796/#settings/mini"]
+
+
+def test_hotkey_toggles_mini_mode():
+    exits: list[str] = []
+    w, desk = make(exits, respawn_gap=0)
+    mini = FakeMini()
+    views = Views(w, mini)
+    views.toggle_mini()                      # Ctrl+Alt+M：沒開就開
+    assert mini.visible
+    views.toggle_mini()                      # 開著就收起來（不開主畫面）
+    assert not mini.visible and desk.procs == []
 
 
 def test_views_fall_back_to_main_when_mini_cannot_start():

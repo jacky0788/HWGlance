@@ -50,7 +50,11 @@ function ColorPicker({ name, value, fallback, presets, onChange }: {
   );
 }
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({ open, section, onClose }: {
+  open: boolean;
+  section?: string; // 打開時捲到哪一段（mini＝迷你模式，從迷你模式的右鍵選單來的）
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<SettingsPayload | null>(null);
   const [unit, setUnit] = useState<Unit>("C");
@@ -74,6 +78,10 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     if (open && data) applyKindColors(changedColors(colors, data.colorDefaults));
   }, [open, data, colors]);
+
+  useEffect(() => {
+    if (open && data && section) document.getElementById(`settings-${section}`)?.scrollIntoView({ block: "start" });
+  }, [open, data, section]);
 
   useEffect(() => {
     if (!open && committed.current) {
@@ -227,7 +235,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             </section>
 
             <MiniSection value={mini ?? data.mini} defaults={data.miniDefaults} catalog={data.miniCatalog}
-              range={data.miniRange} fps={data.fps} onChange={setMini} />
+              range={data.miniRange} fps={data.fps} hotkeys={data.hotkeys} onChange={setMini} />
             {error ? <p role="alert" className="m-0 text-sm text-hot">{error}</p> : null}
           </div>
         )}

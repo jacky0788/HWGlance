@@ -28,7 +28,7 @@ from .logs import streams_to_log
 from .sensors.blackbox import BlackBox, DemoBlackBox
 from .sensors.service import SensorService
 from .settings import Settings, SettingsStore
-from .ui import TITLES
+from .ui import SETTINGS_HASH, TITLES
 
 DEFAULT_PORT = 8796
 CREATE_NO_WINDOW = 0x08000000
@@ -148,17 +148,17 @@ class Window:
         return self._proc is not None and self._proc.poll() is None
 
     def open(self, mode: str = "main") -> None:
-        """mode 只為了相容（以前還有迷你視窗）；一律是主畫面。"""
-        mode = "main"
+        """主畫面；mode="settings" 時再打開設定頁的迷你模式那一段（迷你模式右鍵的「迷你模式設定…」）。"""
+        mode = "settings" if mode == "settings" else "main"
         if not self.webview:
-            self._browser(f"http://127.0.0.1:{self.port}/")
+            self._browser(f"http://127.0.0.1:{self.port}/" + (SETTINGS_HASH if mode == "settings" else ""))
             return
         with self._lock:
             if self.alive():
-                hwnd = self._find(TITLES[mode])
+                hwnd = self._find(TITLES["main"])
                 if hwnd:
                     self._front(hwnd)
-                else:
+                if not hwnd or mode == "settings":
                     self._commands.put({"op": "switch", "mode": mode})
                 return
             wait = self._respawn_gap - (time.monotonic() - self._last_exit)
@@ -248,7 +248,14 @@ class Views:
         if self.mini is not None:
             self.mini.hide()
         if self.window is not None:
-            self.window.open("main")
+            self.window.open("settings" if mode == "settings" else "main")
+
+    def toggle_mini(self) -> None:
+        """快速鍵 Ctrl+Alt+M：開著就收起來，沒開就開（主畫面跟著關掉）。"""
+        if self.mini is not None and self.mini.visible:
+            self.mini.hide()
+        else:
+            self.open("mini")
 
 
 def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
@@ -307,7 +314,9 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         from .mini import MiniMode
         fps = DemoFps() if demo else PresentMonFps(paths.presentmon_dir(), admin=system.is_admin())
         mini = MiniMode(service, store, fps, on_main=lambda: views.open("main"), on_close=window_closed,
-                        on_change=lambda: tray.refresh() if tray is not None else None)
+                        on_toggle=views.toggle_mini, on_settings=lambda: views.open("settings"),
+                        on_change=lambda: tray.refresh() if tray is not None else None,
+                        notify=lambda message, title: tray.notify(message, title) if tray is not None else None)
         mini.start()
         views.mini = mini
         tray = start_tray(views.open, quit_event.set, mini)
@@ -321,7 +330,8 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     server = Server(create_app(service, token, open_ui=views.open if window else None,
                                ui_commands=window.next_commands if window else None,
                                settings=store, on_quit=quit_event.set, events=events, blackbox=box,
-                               fps_status=fps.status if fps is not None else None), port)
+                               mini_info=(lambda: {"fps": fps.status(), "hotkeys": mini.hotkeys})
+                               if mini is not None else None), port)
     server.start()
     if not server.wait_ready():
         service.stop()

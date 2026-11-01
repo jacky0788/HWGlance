@@ -7,6 +7,7 @@
     colors       {硬體種類: 調色盤的名稱或 #rrggbb}，卡片的顏色（圖示、色條、儀表、走勢）；只存改過的
     mini         迷你模式：items 要顯示的項目、order 分組順序、opacity 背景不透明度 %、scale 大小 %、
                  locked 鎖定（滑鼠穿透）；跟預設一樣就不存
+    trayHintShown、miniLockHintShown  「還在系統匣」「迷你模式已鎖定」的通知跳過了沒（都只跳一次）
 """
 from __future__ import annotations
 
@@ -97,6 +98,7 @@ class Settings:
     close_to_tray: bool = True
     bands: dict[str, tuple[float, float]] = field(default_factory=dict)   # 只放改過的
     tray_hint_shown: bool = False                                        # 「還在系統匣」的提示顯示過了沒
+    mini_lock_hint_shown: bool = False                                   # 「迷你模式已鎖定」的提示顯示過了沒
     colors: dict[str, str] = field(default_factory=dict)                 # 只放改過的
     mini: MiniSettings = field(default_factory=MiniSettings)
 
@@ -144,6 +146,7 @@ def parse(data: object) -> Settings:
     interval = data.get("interval") if data.get("interval") in INTERVALS else s.interval
     close = data.get("closeToTray") if isinstance(data.get("closeToTray"), bool) else s.close_to_tray
     hint = data.get("trayHintShown") if isinstance(data.get("trayHintShown"), bool) else False
+    lock_hint = data.get("miniLockHintShown") if isinstance(data.get("miniLockHintShown"), bool) else False
     bands: dict[str, tuple[float, float]] = {}
     raw = data.get("bands")
     if isinstance(raw, dict):
@@ -157,12 +160,13 @@ def parse(data: object) -> Settings:
     colors = color_changes(data["colors"]) if isinstance(data.get("colors"), dict) else {}
     mini = mini_from(data["mini"]) if "mini" in data else MiniSettings()
     return Settings(unit=unit, interval=interval, close_to_tray=close, bands=only_changes(bands),
-                    tray_hint_shown=hint, colors=colors, mini=mini)
+                    tray_hint_shown=hint, mini_lock_hint_shown=lock_hint, colors=colors, mini=mini)
 
 
 def to_json(s: Settings) -> dict:
     out = {"unit": s.unit, "interval": s.interval, "closeToTray": s.close_to_tray,
            "bands": {k: list(v) for k, v in s.bands.items()}, "trayHintShown": s.tray_hint_shown,
+           "miniLockHintShown": s.mini_lock_hint_shown,
            "colors": dict(s.colors)}
     if s.mini != MiniSettings():                          # 跟預設一樣就不存：之後改預設，沒動過的人會跟著變
         out["mini"] = mini_json(s.mini)

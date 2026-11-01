@@ -6,14 +6,16 @@ import type { MiniGroup, MiniSettings } from "../../types";
 const arrow =
   "grid place-items-center size-5 rounded text-fg-subtle hover:bg-surface-2 hover:text-fg cursor-pointer disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent";
 
-export function MiniSection({ value, defaults, catalog, range, fps, onChange }: {
+export function MiniSection({ value, defaults, catalog, range, fps, hotkeys, onChange }: {
   value: MiniSettings;
   defaults: MiniSettings;
   catalog: MiniGroup[];
   range: { opacity: [number, number]; scale: [number, number] };
   fps: string | null; // FPS 讀不到的原因
+  hotkeys: { keys: string; action: string; ok: boolean }[];
   onChange: (value: MiniSettings) => void;
 }) {
+  const lockKey = hotkeys.find((h) => h.action === "鎖定／解除鎖定" && h.ok)?.keys;
   const groups = value.order
     .map((g) => catalog.find((c) => c.group === g))
     .filter((g): g is MiniGroup => g != null);
@@ -32,7 +34,7 @@ export function MiniSection({ value, defaults, catalog, range, fps, onChange }: 
   }
 
   return (
-    <section>
+    <section id="settings-mini" className="scroll-mt-4">
       <div className="flex items-baseline justify-between mb-2">
         <h3 className="m-0 text-sm font-semibold">迷你模式</h3>
         <button type="button" onClick={() => onChange(defaults)}
@@ -60,8 +62,21 @@ export function MiniSection({ value, defaults, catalog, range, fps, onChange }: 
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={value.locked} onChange={(e) => onChange({ ...value, locked: e.target.checked })}
             className="size-4 shrink-0 accent-(--accent)" />
-          滑鼠穿透，玩遊戲時點不到它（系統匣右鍵可以解除）
+          {`滑鼠穿透，玩遊戲時點不到它（${lockKey ? `按 ${lockKey} 或` : ""}系統匣圖示按右鍵可以解除）`}
         </label>
+        {hotkeys.length > 0 ? (
+          <>
+            <span className="text-fg-muted">快速鍵</span>
+            <ul className="m-0 p-0 list-none flex flex-wrap gap-x-4 gap-y-1">
+              {hotkeys.map((h) => (
+                <li key={h.keys} className={h.ok ? "" : "text-warm"}>
+                  <kbd className="rounded border border-line bg-surface-2 px-1.5 py-0.5 text-xs font-sans">{h.keys}</kbd>
+                  {" "}{h.action}{h.ok ? "" : "（被別的程式佔用了，這個快速鍵不能用）"}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </div>
 
       <p className="mt-3.5 mb-1.5 text-xs text-fg-subtle">要顯示的項目：一組一行，箭頭調整上下順序</p>
@@ -94,7 +109,8 @@ export function MiniSection({ value, defaults, catalog, range, fps, onChange }: 
       </ul>
       <p className="mt-2 mb-0 text-xs text-fg-subtle">
         FPS 用 Intel 的 PresentMon 讀（不碰遊戲本身，不會被反作弊誤判），只有迷你模式開著、有勾 FPS 時才跑。
-        獨佔全螢幕的遊戲會蓋過迷你模式，遊戲改成「無邊框視窗」就看得到。
+        迷你模式永遠在最上層，遊戲切到前景時也會馬上拉回來；但「獨佔全螢幕」的遊戲是直接接管螢幕，
+        任何視窗都蓋不上去，遊戲設定改成「無邊框視窗」（或「全螢幕視窗化」）就看得到。
       </p>
     </section>
   );

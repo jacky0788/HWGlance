@@ -35,7 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--demo-profile", choices=("this-pc", "intel-laptop"), default="this-pc",
                     help="示範哪一種電腦：this-pc＝這台（AMD＋NVIDIA 桌機）、intel-laptop＝Intel 筆電")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"埠（預設 {DEFAULT_PORT}）")
-    ap.add_argument("--mode", choices=("main", "mini"), default="main", help="開哪一種視窗")
+    ap.add_argument("--mode", choices=("main", "mini", "settings"), default="main",
+                    help="開哪一種：主畫面、迷你模式、主畫面＋設定頁")
     ap.add_argument("--hidden", action="store_true", help="只開系統匣")
     ap.add_argument("--activate", action="store_true", help="叫出已經在跑的那一份")
     ap.add_argument("--data", default="", help="設定、log 的資料夾（預設 data/；相對路徑以 HWGlance 資料夾為起點）")

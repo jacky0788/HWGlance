@@ -21,9 +21,12 @@ from .render import has_cjk_font, render
 
 class MiniMode:
     def __init__(self, service, store, fps, *, on_main: Callable[[], None], on_close: Callable[[], None],
-                 on_change: Callable[[], None] | None = None, window_factory=None) -> None:
+                 on_toggle: Callable[[], None] | None = None, on_settings: Callable[[], None] | None = None,
+                 on_change: Callable[[], None] | None = None, notify: Callable[[str, str], None] | None = None,
+                 window_factory=None) -> None:
         self._service, self._store, self._fps = service, store, fps
-        self._on_close, self._on_change = on_close, on_change
+        self._on_close, self._on_change, self._notify = on_close, on_change, notify
+        self._was_locked = store.get().mini.locked
         self.ready = False                                # 視窗建好了沒（不是 Windows 或建立失敗就一直是 False）
         self._key: tuple | None = None
         self._width = 0
@@ -32,8 +35,8 @@ class MiniMode:
             from .window import MiniWindow
             window_factory = MiniWindow
         self._window = window_factory(self._frame, state_file=paths.mini_state_file(), on_main=on_main,
-                                      on_close=self._closed, on_lock=self.toggle_lock,
-                                      locked=store.get().mini.locked)
+                                      on_close=self._closed, on_lock=self.toggle_lock, on_toggle=on_toggle,
+                                      on_settings=on_settings, locked=store.get().mini.locked)
         store.subscribe(self._settings_changed)
 
     @property
@@ -43,6 +46,14 @@ class MiniMode:
     @property
     def locked(self) -> bool:
         return self._store.get().mini.locked
+
+    @property
+    def hotkeys(self) -> list[dict]:
+        """[{keys, action, ok}]：全域快速鍵（window.HOTKEYS）有沒有註冊成功。"""
+        return list(getattr(self._window, "hotkeys", []))
+
+    def hotkey(self, action: str) -> str | None:
+        return next((h["keys"] for h in self.hotkeys if h["action"] == action and h["ok"]), None)
 
     def start(self) -> bool:
         self.ready = bool(self._window.start())
@@ -80,6 +91,16 @@ class MiniMode:
     def _settings_changed(self, s) -> None:
         self._window.set_locked(s.mini.locked)
         self._window.refresh()
+        first_lock = s.mini.locked and not self._was_locked and not s.mini_lock_hint_shown
+        self._was_locked = s.mini.locked
+        if first_lock and self._notify is not None:
+            # 鎖定後滑鼠碰不到它：第一次鎖定時告訴使用者怎麼解除（鎖了之後什麼都改不了）。
+            # 只提醒這一次：每次鎖定都跳很吵（使用者 2026-11-02）；之後看右鍵選單、系統匣、設定頁寫的快速鍵
+            key = self.hotkey("鎖定／解除鎖定")
+            how = f"按 {key}，或在系統匣的 HWGlance 圖示按右鍵" if key else "在系統匣的 HWGlance 圖示按右鍵"
+            self._notify(f"滑鼠現在會穿過迷你模式。要拖曳或改設定，{how}解除鎖定。這個提醒只會出現這一次。",
+                         "迷你模式已鎖定")
+            self._store.update(mini_lock_hint_shown=True)
         self._changed()
 
     def _frame(self, dpi_scale: float):

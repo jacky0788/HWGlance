@@ -24,6 +24,7 @@ POLL_FAILURES = 3                     # 連續幾次連不上本體就結束
 EXIT_GRACE = 5.0                      # 最後一個視窗關掉後，最多再等幾秒就強制結束程序
 
 TITLES = {"main": APP_NAME}           # core.py 用標題找視窗
+SETTINGS_HASH = "#settings/mini"      # 開主畫面後直接開設定頁的迷你模式那一段（迷你模式右鍵的「迷你模式設定…」）
 MIN_SIZE = (760, 560)
 SCREEN_SHARE = (0.58, 0.82)          # 主畫面佔螢幕的比例（寬、高），不寫死像素
 APP_ID = "jacky0788.HWGlance"        # Windows 工具列的身分
@@ -68,12 +69,12 @@ class UiApp:
         self._dark = system_is_dark()
 
     def url(self, mode: str) -> str:
-        return f"http://127.0.0.1:{self.port}/"
+        return f"http://127.0.0.1:{self.port}/" + (SETTINGS_HASH if mode == "settings" else "")
 
     def create(self, mode: str = "main"):
         import webview
         width, height = window_size(webview)
-        win = webview.create_window(TITLES["main"], self.url("main"), width=width, height=height, min_size=MIN_SIZE,
+        win = webview.create_window(TITLES["main"], self.url(mode), width=width, height=height, min_size=MIN_SIZE,
                                     background_color=BACKGROUND[self._dark])
         win.events.closed += lambda: self._closed("main")
         self.windows["main"] = win
@@ -81,12 +82,14 @@ class UiApp:
         return win
 
     def switch(self, mode: str = "main") -> None:
-        """本體叫出主畫面：已經開著就還原、拉到前面（以前還要切迷你視窗，現在迷你模式在本體）。"""
+        """本體叫出主畫面：已經開著就還原、拉到前面；mode="settings" 再打開設定頁（迷你模式在本體，不在這裡）。"""
         with self._lock:
             existing = self.windows.get("main")
             if existing is None:
-                self.create("main")
+                self.create(mode)
         if existing is not None:
+            if mode == "settings":
+                existing.evaluate_js(f"location.hash = '{SETTINGS_HASH}'")
             existing.restore()
             existing.show()
 
@@ -155,7 +158,7 @@ def run(port: int, mode: str = "main") -> int:
         print("桌面視窗需要 pywebview；或改用瀏覽器：python -m hwglance --serve", file=sys.stderr)
         return 1
     app = UiApp(port)
-    first = app.create("main")
+    first = app.create(mode if mode in ("main", "settings") else "main")
     token = os.environ.get("HWGLANCE_TOKEN", "")
     if token:
         # 不用 webview.start(func=…)：那條執行緒不是 daemon，視窗都關了它還會讓程序活著

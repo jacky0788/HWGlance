@@ -99,6 +99,7 @@ export interface SettingsPayload {
   miniCatalog: MiniGroup[];
   miniRange: { opacity: [number, number]; scale: [number, number] };
   fps: string | null; // FPS 讀不到的原因；null＝讀得到
+  hotkeys: { keys: string; action: string; ok: boolean }[]; // 迷你模式的全域快速鍵；ok=false 是被別的程式佔用
 }
 
 // 迷你模式（後端 settings.py 的 MiniSettings、mini/items.py 的 catalog）
