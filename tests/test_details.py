@@ -60,13 +60,27 @@ def test_gpu_memory_users_only_over_100_mb():
     d = device_details(tree, normalize(tree), "/gpu-nvidia/0", demo.specs(), demo.gpu_processes())
     titles = [s["title"] for s in d["sections"]]
     assert titles.index("顯存被誰佔用") == titles.index("顯存") + 1
-    users = section(d, "顯存被誰佔用")["rows"]
+    sec = section(d, "顯存被誰佔用")
+    users = sec["ranking"]["items"]                       # 排行，不是一般讀數的「名稱：數值」
+    assert "rows" not in sec and sec["measure"] == "data" and sec["ranking"]["total"] == {"value": 15.9, "unit": "GB"}
     assert all(r["unit"] in ("MB", "GB") for r in users) and "Discord" not in [r["label"] for r in users]   # 64 MB 不列
     assert users[0]["label"].startswith("桌面視窗管理員") or users[0]["label"].startswith("python")
-    assert {"label": "RazerAppEngine", "value": 114, "unit": "MB", "note": "PID 20432"} in users
+    razer = next(r for r in users if r["label"] == "RazerAppEngine")
+    assert (razer["value"], razer["unit"], razer["note"]) == (114, "MB", "PID 20432") and 0 < razer["share"] < 0.01
+    assert users[0]["share"] == max(r["share"] for r in users) <= 1
     none = device_details(tree, normalize(tree), "/gpu-nvidia/0", {}, [{"pid": 1, "name": "x", "bytes": 5}])
-    assert "目前沒有程式超過" in section(none, "顯存被誰佔用")["note"]
+    assert "目前沒有程式超過" in section(none, "顯存被誰佔用")["note"] and "ranking" not in section(none, "顯存被誰佔用")
     assert "顯存被誰佔用" not in [s["title"] for s in build("/gpu-nvidia/0")["sections"]]   # 查不到就不列
+
+
+def test_sections_say_what_they_measure():
+    """前端照 measure 配圖示與數值顏色：同一個視窗裡負載、時脈、功耗…一眼分得開（使用者 2026-11-01）。"""
+    measures = {s["title"]: s.get("measure") for s in build("/gpu-nvidia/0")["sections"]}
+    assert measures == {"規格": None, "溫度": "temp", "負載": "load", "時脈": "clock", "顯存": "data",
+                        "功耗與電壓": "power", "風扇": "fan", "PCIe 傳輸": "flow"}
+    assert section(build("/motherboard"), "電壓")["measure"] == "power"
+    assert section(build("/ram"), "實體記憶體")["measure"] == "data"
+    assert section(build("/nvme/5"), "讀寫")["measure"] == "flow"
 
 
 def test_board_shows_bios_fans_with_unplugged_and_voltages():
@@ -115,4 +129,6 @@ def test_unknown_sensors_end_up_in_others():
         sensor("/powermonitor/0", "Current", 0, "12V", 24.5)])
     d = device_details([hw], normalize([hw]), "/powermonitor/0")
     assert rows(section(d, "溫度"))["Connector"]["value"] == 41.0
-    assert rows(section(d, "其他讀數"))["12V"]["unit"] == "A"
+    other = section(d, "其他讀數")
+    assert rows(other)["12V"]["unit"] == "A" and rows(other)["12V"]["measure"] == "power"   # 什麼都有，每行自己帶
+    assert "measure" not in other

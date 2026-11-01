@@ -18,11 +18,12 @@ export function MemoryCard({ device, onOpen }: { device: Device; onOpen: (id: st
             <div className="h-full rounded-full bg-(--kind) transition-[width] duration-500"
               style={{ width: `${Math.min(100, percent)}%` }} />
           </div>
-          <p className="mt-2 mb-0 flex justify-between text-sm num">
+          <p className="m-data mt-2 mb-0 flex justify-between text-sm num">
             <span className="text-fg-muted">
-              已用 {used ? `${used.value.toFixed(1)} GB` : "—"}
+              已用 <span className="font-medium text-(--m)">{used ? used.value.toFixed(1) : "—"}</span>
+              {used ? <span className="ml-1 text-xs text-fg-subtle">GB</span> : null}
             </span>
-            <span className="font-semibold">{Math.round(percent)}%</span>
+            <span className="font-semibold text-(--m)">{Math.round(percent)}%</span>
           </p>
         </>
       ) : (

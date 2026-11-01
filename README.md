@@ -22,7 +22,7 @@
 - 桌面的「HWGlance」捷徑或 `run.bat`：開監控。第一次會建虛擬環境、解出 LibreHardwareMonitor、建置介面；已經開著就叫出原本的視窗。
   捷徑不見了就重建：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\make-shortcut.ps1`。
 - 關掉視窗後還在系統匣繼續監控，圖示上的數字就是 CPU 溫度；左鍵開主畫面、右鍵有迷你模式與結束。
-- 主畫面右上角「迷你模式」換成置頂的小視窗；「設定」可以改溫度單位、更新頻率、各種硬體的溫度門檻。
+- 主畫面右上角「迷你模式」換成置頂的小視窗；「設定」可以改溫度單位、更新頻率、各種硬體的溫度門檻與卡片顏色（調色盤或自訂）。
 - `probe.bat`：探測這台電腦讀得到哪些感測器，結果寫到 `data\probe\`。
 
 技術說明、決策與進度見 [docs/SPEC.md](docs/SPEC.md)；給接手的 agent 看 [AGENTS.md](AGENTS.md)。

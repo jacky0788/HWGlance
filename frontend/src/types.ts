@@ -75,7 +75,7 @@ export interface Snapshot {
   state: "starting" | "running" | "error";
   source: Source;
   perf: { readMs?: number };
-  prefs: { unit: Unit };
+  prefs: { unit: Unit; colors?: Record<string, string> }; // colors：只有改過的卡片顏色
   devices: Device[];
   overview: Tile[];
 }
@@ -90,6 +90,10 @@ export interface SettingsPayload {
   labels: Record<string, string>;
   intervals: number[];
   range: [number, number];
+  colors: Record<string, string>; // 卡片顏色：調色盤的名稱（blue…）或 #rrggbb
+  colorDefaults: Record<string, string>;
+  colorLabels: Record<string, string>;
+  presets: string[];
 }
 
 export interface SettingsBody {
@@ -97,6 +101,7 @@ export interface SettingsBody {
   interval: number;
   closeToTray: boolean;
   bands: Record<string, [number, number]>;
+  colors: Record<string, string>;
 }
 
 export interface HistoryWindow {
@@ -105,6 +110,9 @@ export interface HistoryWindow {
 }
 
 // /api/device?id=（後端 src/hwglance/sensors/details.py）：點硬體跳出的詳細資訊，欄位改了兩邊一起改
+// 量的是什麼：決定段落圖示與數值顏色（溫度另外照等級上色）
+export type Measure = "temp" | "load" | "clock" | "power" | "fan" | "data" | "flow";
+
 export interface DetailRow {
   label: string;
   value: number | string | null;
@@ -114,6 +122,7 @@ export interface DetailRow {
   level?: Level;
   min?: number | null;
   max?: number | null;
+  measure?: Measure; // 只有「其他讀數」的行會帶（那一段什麼都有）
 }
 
 export interface DetailTable {
@@ -128,12 +137,20 @@ export interface DetailBars {
   items: { label: string; value: number | null }[];
 }
 
+// 排行（顯存被誰佔用）：名次＋佔總量的長條
+export interface DetailRanking {
+  total?: { value: number; unit: string };
+  items: { label: string; note: string; value: number; unit: string; share: number }[];
+}
+
 export interface DetailSection {
   title: string;
   note?: string;
+  measure?: Measure;
   rows?: DetailRow[];
   table?: DetailTable;
   bars?: DetailBars;
+  ranking?: DetailRanking;
 }
 
 export interface DeviceDetail {

@@ -1,12 +1,17 @@
 // 點總覽磚塊、卡片或硬碟那一列跳出的「詳細資訊」：規格＋所有讀數，分段、中文、附說明，開著時跟著快照一起更新。
 // 內容由後端 src/hwglance/sensors/details.py 整理好（GET /api/device?id=），這裡只負責排版。
+// 每段一個框，標題前的圖示與數值顏色照這段量的是什麼（measure）；「顯存被誰佔用」是排行，長得跟讀數不一樣。
 import { CircuitBoard, Cpu, Droplets, Gpu, HardDrive, MemoryStick, Thermometer, X, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "../../lib/api";
 import { number, temp, tempExact } from "../../lib/format";
+import { MEASURE_ICONS, colored } from "../../lib/measures";
+import type { MeasureOrNone } from "../../lib/measures";
 import { useUnit } from "../../lib/prefs";
-import type { DetailBars, DetailRow, DetailSection, DetailTable, Device, DeviceDetail, Kind } from "../../types";
+import type {
+  DetailBars, DetailRanking, DetailRow, DetailSection, DetailTable, Device, DeviceDetail, Kind,
+} from "../../types";
 
 const ICONS: Record<Kind, LucideIcon> = {
   cpu: Cpu, gpu: Gpu, board: CircuitBoard, cooler: Droplets, memory: MemoryStick, storage: HardDrive, psu: Zap,
@@ -37,26 +42,31 @@ function RowValue({ row }: { row: DetailRow }) {
   return <span className="font-medium">{row.value ?? "—"}</span>;
 }
 
-function Rows({ rows }: { rows: DetailRow[] }) {
+function Rows({ rows, tone }: { rows: DetailRow[]; tone: MeasureOrNone }) {
   return (
     <dl className="m-0">
-      {rows.map((row, i) => (
-        // 名稱可能重複（好幾個 WebView2），key 要加上位置，不然 React 會把列搞混
-        <div key={`${i}:${row.label}`} className="flex items-start justify-between gap-4 py-2 border-t border-line first:border-t-0">
-          <dt className="min-w-0">
-            <span className="text-sm text-fg-muted">{row.label}</span>
-            {row.note ? <span className="block text-xs text-fg-subtle">{row.note}</span> : null}
-          </dt>
-          <dd className="m-0 max-w-[60%] text-right text-sm num break-words">
-            <RowValue row={row} />
-          </dd>
-        </div>
-      ))}
+      {rows.map((row, i) => {
+        const m = row.measure ?? tone; // 「其他讀數」什麼都有，每行自己帶
+        return (
+          // 名稱可能重複（好幾個 WebView2），key 要加上位置，不然 React 會把列搞混
+          <div key={`${i}:${row.label}`}
+            className={`m-${m} flex items-start justify-between gap-4 py-2 border-t border-line first:border-t-0`}>
+            <dt className="min-w-0">
+              <span className="text-sm text-fg-muted">{row.label}</span>
+              {row.note ? <span className="block text-xs text-fg-subtle">{row.note}</span> : null}
+            </dt>
+            <dd className={`m-0 max-w-[60%] text-right text-sm num break-words ${!row.temp && colored(m) ? "text-(--m)" : ""}`}>
+              <RowValue row={row} />
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
 
-function Bars({ bars }: { bars: DetailBars }) {
+function Bars({ bars, tone }: { bars: DetailBars; tone: MeasureOrNone }) {
+  const tinted = colored(tone);
   return (
     <div className="mt-3">
       <p className="m-0 mb-2 text-xs text-fg-subtle">{bars.label}</p>
@@ -65,16 +75,45 @@ function Bars({ bars }: { bars: DetailBars }) {
           <li key={`${i}:${item.label}`} className="min-w-0" title={item.label}>
             <div className="flex items-baseline justify-between gap-1 text-xs">
               <span className="text-fg-muted truncate">{item.label}</span>
-              <span className="num">{number(item.value)}{bars.unit}</span>
+              <span className={`num ${tinted ? "text-(--m)" : ""}`}>{number(item.value)}{bars.unit}</span>
             </div>
             <div className="mt-1 h-1.5 rounded-full bg-track overflow-hidden">
-              <div className="h-full rounded-full bg-(--kind) transition-[width] duration-500"
+              <div className={`h-full rounded-full transition-[width] duration-500 ${tinted ? "bg-(--m)" : "bg-(--kind)"}`}
                 style={{ width: `${Math.min(100, Math.max(0, ((item.value ?? 0) / bars.max) * 100))}%` }} />
             </div>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+// 排行：名次、名稱、用量，下面一條佔總量的長條（有總量時再寫佔幾 %）
+function Ranking({ ranking }: { ranking: DetailRanking }) {
+  return (
+    <ol className="m-0 mt-2.5 p-0 list-none space-y-2.5">
+      {ranking.items.map((item, i) => (
+        <li key={`${i}:${item.label}`} className="min-w-0">
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="min-w-0 truncate" title={item.label}>
+              <span className="mr-1.5 num text-fg-subtle">{i + 1}.</span>{item.label}
+            </span>
+            <span className="shrink-0 num font-medium text-(--m)">
+              {number(item.value)}<span className="ml-1 text-xs text-fg-subtle">{item.unit}</span>
+            </span>
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <div className="h-1.5 flex-1 rounded-full bg-track overflow-hidden">
+              <div className="h-full rounded-full bg-(--m) transition-[width] duration-500"
+                style={{ width: `${Math.max(1, Math.min(100, item.share * 100))}%` }} />
+            </div>
+            <span className="shrink-0 text-xs text-fg-subtle num">
+              {ranking.total ? `${item.share < 0.01 ? "<1" : Math.round(item.share * 100)}%・` : ""}{item.note}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -114,12 +153,22 @@ function Table({ table }: { table: DetailTable }) {
 }
 
 function Section({ section }: { section: DetailSection }) {
+  const m: MeasureOrNone = section.measure ?? "none";
+  const Icon = MEASURE_ICONS[m];
+  const total = section.ranking?.total;
   return (
-    <section>
-      <h3 className="m-0 text-sm font-semibold">{section.title}</h3>
-      {section.note ? <p className="mt-0.5 mb-0 text-xs text-fg-subtle">{section.note}</p> : null}
-      {section.rows ? <div className="mt-1"><Rows rows={section.rows} /></div> : null}
-      {section.bars ? <Bars bars={section.bars} /> : null}
+    <section className={`m-${m} rounded-xl border border-line bg-surface-2 px-4 py-3`}>
+      <h3 className="m-0 flex items-center gap-2 text-sm font-semibold">
+        <Icon className="size-4 shrink-0 text-(--m)" aria-hidden />
+        <span className="min-w-0 truncate">{section.title}</span>
+        {total ? (
+          <span className="ml-auto shrink-0 text-xs font-normal text-fg-subtle num">共 {number(total.value)} {total.unit}</span>
+        ) : null}
+      </h3>
+      {section.note ? <p className="mt-1 mb-0 text-xs text-fg-subtle">{section.note}</p> : null}
+      {section.rows ? <div className="mt-1"><Rows rows={section.rows} tone={m} /></div> : null}
+      {section.bars ? <Bars bars={section.bars} tone={m} /> : null}
+      {section.ranking ? <Ranking ranking={section.ranking} /> : null}
       {section.table ? <Table table={section.table} /> : null}
     </section>
   );
@@ -195,7 +244,7 @@ export function DetailDialog({ deviceId, device, interval, onClose }: {
             <X className="size-4" aria-hidden />
           </button>
         </header>
-        <div ref={body} className="overflow-y-auto px-5 py-4 space-y-6">
+        <div ref={body} className="overflow-y-auto px-5 py-4 space-y-3">
           {error && data ? <p role="alert" className="m-0 text-xs text-warm">更新失敗：{error}（顯示的是上一次的數字）</p> : null}
           {data == null ? (
             <p className="m-0 py-6 text-sm text-fg-muted text-center">{error ?? "讀取中…"}</p>

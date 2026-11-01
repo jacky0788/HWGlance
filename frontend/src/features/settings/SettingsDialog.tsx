@@ -1,8 +1,10 @@
-// 設定：溫度單位、更新頻率、關掉視窗後要不要留在系統匣、各種硬體的溫度門檻。
+// 設定：溫度單位、更新頻率、關掉視窗後要不要留在系統匣、各種硬體的溫度門檻、卡片顏色。
 // 門檻一律用 °C 存（後端 settings.py）；選 °F 時只是顯示與輸入換算。存檔後下一輪讀數就生效。
+// 顏色點了馬上預覽（寫到 <html> 上），按取消或關掉就換回存過的。
 import { useEffect, useRef, useState } from "react";
 import { Segmented } from "../../components/Segmented";
 import { api, errorMessage } from "../../lib/api";
+import { PRESET_NAMES, applyKindColors, changedColors, swatchHex } from "../../lib/colors";
 import { fromUnit, toUnit } from "../../lib/format";
 import type { SettingsPayload, Unit } from "../../types";
 
@@ -12,6 +14,41 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
+const SELECTED = "ring-2 ring-fg ring-offset-2 ring-offset-surface";
+
+function ColorPicker({ name, value, fallback, presets, onChange }: {
+  name: string; // CPU、顯示卡…
+  value: string; // 調色盤名稱或 #rrggbb
+  fallback: string; // 預設
+  presets: string[];
+  onChange: (value: string) => void;
+}) {
+  const custom = value.startsWith("#");
+  return (
+    <>
+      <span className="text-fg-muted">{name}</span>
+      <div role="radiogroup" aria-label={`${name}的顏色`} className="flex flex-wrap items-center gap-2">
+        {presets.map((p) => (
+          <button key={p} type="button" role="radio" aria-checked={value === p} onClick={() => onChange(p)}
+            aria-label={PRESET_NAMES[p] ?? p} title={PRESET_NAMES[p] ?? p}
+            className={`size-6 rounded-full cursor-pointer ${value === p ? SELECTED : "hover:scale-110 transition-transform"}`}
+            style={{ background: `var(--swatch-${p})` }} />
+        ))}
+        <label title="自訂顏色：深色、淺色模式會自動調亮或調暗，才看得清楚"
+          className={`flex items-center gap-1.5 rounded-full border pl-0.5 pr-2 py-0.5 text-xs cursor-pointer ${custom ? "border-fg text-fg" : "border-line text-fg-muted hover:border-line-strong"}`}>
+          <input type="color" className="swatch-input" aria-label={`${name}的自訂顏色`}
+            value={custom ? value : swatchHex(value)} onChange={(e) => onChange(e.target.value)} />
+          自訂
+        </label>
+        {value !== fallback ? (
+          <button type="button" onClick={() => onChange(fallback)}
+            className="text-xs text-fg-subtle hover:text-fg cursor-pointer">恢復預設</button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<SettingsPayload | null>(null);
@@ -19,15 +56,28 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [refresh, setRefresh] = useState(1);
   const [closeToTray, setCloseToTray] = useState(true);
   const [bands, setBands] = useState<Bands>({});
+  const [colors, setColors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [quitting, setQuitting] = useState(false);
+  const committed = useRef<Record<string, string> | null>(null); // 存過的顏色（只有改過的），關掉時換回來
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  useEffect(() => {
+    if (open && data) applyKindColors(changedColors(colors, data.colorDefaults));
+  }, [open, data, colors]);
+
+  useEffect(() => {
+    if (!open && committed.current) {
+      applyKindColors(committed.current);
+      committed.current = null;
+    }
   }, [open]);
 
   useEffect(() => {
@@ -38,11 +88,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       .settings()
       .then((s) => {
         if (cancelled) return;
+        committed.current = changedColors(s.colors, s.colorDefaults);
         setData(s);
         setUnit(s.unit);
         setRefresh(s.interval);
         setCloseToTray(s.closeToTray);
         setBands(s.bands);
+        setColors(s.colors);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errorMessage(e));
@@ -78,7 +130,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     }
     setSaving(true);
     try {
-      await api.saveSettings({ unit, interval: refresh, closeToTray, bands });
+      await api.saveSettings({ unit, interval: refresh, closeToTray, bands, colors });
+      committed.current = changedColors(colors, data.colorDefaults);
       onClose();
     } catch (e) {
       setError(errorMessage(e));
@@ -148,6 +201,25 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                     </div>
                   );
                 })}
+              </div>
+            </section>
+
+            <section>
+              <div className="flex items-baseline justify-between mb-2">
+                <h3 className="m-0 text-sm font-semibold">顏色</h3>
+                <button type="button" onClick={() => setColors(data.colorDefaults)}
+                  className="text-xs text-accent hover:underline cursor-pointer">全部恢復預設</button>
+              </div>
+              <p className="mt-0 mb-2.5 text-xs text-fg-subtle">
+                {"每種硬體的圖示、色條、儀表、走勢用這個顏色，點了馬上看得到。"}
+                {"溫度數字照舊是綠、黃、紅，自訂時避開黃、紅，才不會跟「偏高」「過熱」搞混。"}
+              </p>
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 text-sm">
+                {Object.entries(data.colorLabels).map(([kind, name]) => (
+                  <ColorPicker key={kind} name={name} value={colors[kind] ?? data.colorDefaults[kind]}
+                    fallback={data.colorDefaults[kind]} presets={data.presets}
+                    onChange={(v) => setColors((prev) => ({ ...prev, [kind]: v }))} />
+                ))}
               </div>
             </section>
             {error ? <p role="alert" className="m-0 text-sm text-hot">{error}</p> : null}

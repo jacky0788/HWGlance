@@ -9,6 +9,8 @@
  * 溫度等級三色：--ok（正常）、--warm（偏高）、--hot（過熱），--none 是讀不到。
  * 硬體種類色 --kind-*（CPU 藍、GPU 紫、主機板青綠、記憶體粉、硬碟天藍）用在圖示、磚塊色條、儀表、走勢、長條，
  * 一眼分得出是哪種硬體；溫度數字的綠、黃、紅照舊不變。種類色刻意避開黃、紅。
+ * 種類色可以在設定頁換：調色盤是 --swatch-*，選了的由 lib/colors.ts 寫到 <html> 的 --kind-* 上。
+ * 數值的種類色 --m-*：負載、時脈、功耗、風扇、容量各一色（卡片與詳細資訊），溫度數字不用，照等級。
  */
 :root {
   font-size: clamp(0.875rem, 0.3125vw + 0.6875rem, 1.0625rem);
@@ -34,12 +36,28 @@
   --hot-soft: #fbe6e6;
   --none: #9aa1ad;
 
-  --kind-cpu: #2f63d6;
-  --kind-gpu: #8a3fd1;
-  --kind-board: #0f8f84;
-  --kind-memory: #c2357f;
-  --kind-storage: #0784a8;
+  --swatch-blue: #2f63d6;
+  --swatch-indigo: #5a4bd1;
+  --swatch-purple: #8a3fd1;
+  --swatch-pink: #c2357f;
+  --swatch-teal: #0f8f84;
+  --swatch-sky: #0784a8;
+  --swatch-lime: #4f7f12;
+  --swatch-silver: #5b6472;
+
+  /* 預設的種類色就是調色盤裡的五個；深色模式換掉 --swatch-* 就跟著換 */
+  --kind-cpu: var(--swatch-blue);
+  --kind-gpu: var(--swatch-purple);
+  --kind-board: var(--swatch-teal);
+  --kind-memory: var(--swatch-pink);
+  --kind-storage: var(--swatch-sky);
   --kind-other: #6b7280;
+
+  --m-load: #08799a;
+  --m-clock: #4c56cf;
+  --m-power: #b8520f;
+  --m-fan: #0b7a70;
+  --m-data: #b8236a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,11 +82,20 @@
     --hot-soft: #3a1515;
     --none: #5f6673;
 
-    --kind-cpu: #6b96ff;
-    --kind-gpu: #c38bff;
-    --kind-board: #34d1bd;
-    --kind-memory: #f57cba;
-    --kind-storage: #3fc8eb;
+    --swatch-blue: #6b96ff;
+    --swatch-indigo: #9d8fff;
+    --swatch-purple: #c38bff;
+    --swatch-pink: #f57cba;
+    --swatch-teal: #34d1bd;
+    --swatch-sky: #3fc8eb;
+    --swatch-lime: #a6d96a;
+    --swatch-silver: #c4cad4;
     --kind-other: #9aa1ad;
+
+    --m-load: #5ccfe6;
+    --m-clock: #a5b4fc;
+    --m-power: #ffa266;
+    --m-fan: #5eead4;
+    --m-data: #f9a8d4;
   }
 }

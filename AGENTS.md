@@ -21,13 +21,13 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣；`IntelLaptopDemo`（`--demo-profile intel-laptop`）是另一種電腦：Intel 12 代筆電（效能核／節能核、內顯＋筆電獨顯、電池、主機板沒有感測器），名稱照 LHM 原始碼 |
 | `src/hwglance/sensors/model.py` | `RawHardware`／`RawSensor`（LHM 與示範資料共用的形狀） |
 | `src/hwglance/sensors/normalize.py` | 整理：分類、總覽磚塊、主溫度、負載／時脈／功耗、風扇。純函式，`tests/test_normalize.py` 用假樹測 |
-| `src/hwglance/sensors/details.py` | 點硬體跳出的詳細資訊：規格＋所有讀數分段（規格、溫度、負載…），中文名稱、單位、一句說明；挑剩的放「其他讀數」。純函式，`tests/test_details.py` 用示範資料測 |
+| `src/hwglance/sensors/details.py` | 點硬體跳出的詳細資訊：規格＋所有讀數分段（規格、溫度、負載…），中文名稱、單位、一句說明；每段帶 `measure`（量的是什麼，前端配圖示與顏色），「顯存被誰佔用」是 `ranking`；挑剩的放「其他讀數」（每行自己帶 `measure`）。純函式，`tests/test_details.py` 用示範資料測 |
 | `src/hwglance/sensors/labels.py`、`thresholds.py` | 英文感測器名稱 → 中文；溫度門檻（正常／偏高／過熱） |
 | `src/hwglance/sensors/history.py`、`service.py` | 最近 10 分鐘的歷史；背景執行緒＋快照快取（硬碟每 10 輪才讀一次） |
 | `src/hwglance/sensors/blackbox.py` | 黑盒子（SPEC D26）：每 2 秒把主要讀數寫進 `data/blackbox/日期.jsonl`（寫檔在自己的執行緒、每 5 秒 fsync、留 7 天）、讀一段時間給事件頁（`GET /api/blackbox`）；`DemoBlackBox` 是示範用、算出來的；`tests/test_blackbox.py` |
 | `src/hwglance/sensors/guard.py` | 讀取的保險（SPEC D25）：某一類讀失敗或顯示卡驅動報錯 → 停讀那一類（值顯示「—」、畫面上方說明）→ 穩定 1 分鐘後由 `lhm.py` 關掉重開；純邏輯，`tests/test_guard.py` |
 | `src/hwglance/api/` | `app.py` 端點（清單在檔案開頭）、`security.py` Host 檢查與 token |
-| `src/hwglance/settings.py` | 設定 `data/settings.json`：單位、更新頻率、關視窗留在系統匣、門檻（只存改過的）；壞掉就用預設 |
+| `src/hwglance/settings.py` | 設定 `data/settings.json`：單位、更新頻率、關視窗留在系統匣、門檻、卡片顏色（門檻與顏色只存改過的）；壞掉就用預設 |
 | `src/hwglance/core.py` | 本體：服務＋伺服器＋系統匣＋視窗控制（`Window`：開、叫到前面、排切換指令、結束）、套用設定、選埠 |
 | `src/hwglance/tray.py` | 系統匣（pystray＋Pillow）：圖示畫 CPU 溫度、提示文字、右鍵選單；畫圖與文字是純函式 |
 | `src/hwglance/ui.py` | 視窗程序（pywebview）：主畫面／迷你視窗（`UiApp.switch`）、網頁按鈕的 `Bridge`、長輪詢本體指令（`poll_commands`）、迷你位置記在 `data/ui-state.json` |
@@ -43,8 +43,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`，`App.tsx` 的 `usePage` 看網址切換）、`Mini.tsx` 迷你視窗（`/?view=mini`），只負責排版 |
 | `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`events/`（事件頁的摘要與篩選、清單（零星的收成一行）、`BlackBox.tsx` 點開一件事時的黑盒子讀數、`useEvents.ts` 抓 `/api/events` 與頂端列的 7 天徽章）、`status/`（頂端列與分頁、提醒、底部）、`settings/`（設定面板） |
 | `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`（給 `onOpen` 就整張可點、標題列有「詳細」按鈕）、`Readout`（數值格與清單列）、`Segmented`（分段按鈕） |
-| `frontend/src/lib/` | `api.ts`（唯一發請求的地方）、`useSnapshot.ts`（每秒抓、看不到就停）、`useHistory.ts`、`format.ts`（溫度一律傳 °C 進來，顯示時才換 °F）、`prefs.ts`（溫度單位的 context）、`bridge.ts`（桌面視窗的切換／關閉） |
-| `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot`；硬體種類色 `--kind-*`（外層加 `kind-cpu` 這類 class）用在圖示與裝飾（`--deco`：磚塊色條、儀表、走勢、長條）；**溫度數字只用 `--level`（綠黃紅），不要套種類色**，外框也不要上色（使用者兩次糾正，SPEC D22） |
+| `frontend/src/lib/` | `api.ts`（唯一發請求的地方）、`useSnapshot.ts`（每秒抓、看不到就停）、`useHistory.ts`、`format.ts`（溫度一律傳 °C 進來，顯示時才換 °F）、`prefs.ts`（溫度單位的 context）、`colors.ts`（設定的卡片顏色寫到 `<html>` 的 `--kind-*`，只寫改過的）、`measures.ts`（數值量的是什麼 → 圖示，卡片與詳細資訊共用）、`bridge.ts`（桌面視窗的切換／關閉） |
+| `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot`；硬體種類色 `--kind-*`（預設指向調色盤 `--swatch-*`，設定頁可換；外層加 `kind-cpu` 這類 class）用在圖示與裝飾（`--deco`：磚塊色條、儀表、走勢、長條）；數值的種類色 `--m-*`（負載、時脈、功耗、風扇、容量，外層加 `m-load` 這類 class，SPEC D28）；**溫度數字只用 `--level`（綠黃紅），不要套種類色**，外框也不要上色（使用者兩次糾正，SPEC D22） |
 
 ## 硬性規則
 
@@ -62,6 +62,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
    設定欄位 → `settings.py`、`api/app.py` 的 `settings_payload`／`SettingsBody`、`types.ts` 的 `SettingsPayload`；
    新的溫度種類 → `thresholds.py` 的 `DEFAULTS` 與 `LABELS`；迷你視窗的內容變高 → `ui.py` 的 `MINI_SIZE`；
    詳細資訊的欄位（`details.py`）→ `types.ts` 的 `DeviceDetail`；規格的欄位（`lhm.specs`）→ `demo.specs` 要一樣；
+   調色盤（`settings.COLOR_PRESETS`、`COLOR_DEFAULTS`）→ `tokens.css` 的 `--swatch-*`、`--kind-*` 與 `lib/colors.ts` 的 `PRESET_NAMES`；
+   新的 `measure`（`details.MEASURES`）→ `types.ts` 的 `Measure`、`lib/measures.ts`、`index.css` 的 `.m-*`；
    事件記錄的欄位（`events/incidents.py` 的 `incident`／`report`）→ `types.ts`；`catalog.WATCHED` 加來源 → 要有對應的規則
    （`test_watched_covers_every_rule` 會擋）；黑盒子記的鍵就是 `normalize.history_values`（改了舊檔照樣讀得到，
    說明寫在每個檔裡），回傳的欄位（`blackbox.summarize`）→ `types.ts` 的 `BlackBoxWindow`。

@@ -81,10 +81,10 @@ def pick_port(preferred: int) -> int:
 
 
 def apply_settings(service: SensorService, s: Settings) -> None:
-    """設定存檔後馬上生效：下一輪就用新的更新頻率、門檻、單位。"""
+    """設定存檔後馬上生效：下一輪就用新的更新頻率、門檻、單位、卡片顏色（顏色只放改過的）。"""
     service.interval = s.interval
     service.bands = s.merged_bands()
-    service.prefs = {"unit": s.unit}
+    service.prefs = {"unit": s.unit, "colors": dict(s.colors)}
 
 
 def window_python() -> str:

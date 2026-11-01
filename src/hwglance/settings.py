@@ -4,11 +4,13 @@
     interval     幾秒讀一次：1、2、5
     closeToTray  關掉視窗時留在系統匣繼續監控（False＝整個結束）
     bands        {種類: [偏高, 過熱]}，°C
+    colors       {硬體種類: 調色盤的名稱或 #rrggbb}，卡片的顏色（圖示、色條、儀表、走勢）；只存改過的
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -20,6 +22,10 @@ from .sensors.thresholds import DEFAULTS, Band
 UNITS = ("C", "F")
 INTERVALS = (1, 2, 5)
 BAND_RANGE = (20.0, 130.0)
+COLOR_PRESETS = ("blue", "indigo", "purple", "pink", "teal", "sky", "lime", "silver")   # tokens.css 的 --swatch-*
+COLOR_DEFAULTS = {"cpu": "blue", "gpu": "purple", "board": "teal", "memory": "pink", "storage": "sky"}
+COLOR_LABELS = {"cpu": "CPU", "gpu": "顯示卡", "board": "主機板", "memory": "記憶體", "storage": "硬碟"}
+HEX_COLOR = re.compile(r"#[0-9a-f]{6}\Z")
 
 
 @dataclass(frozen=True)
@@ -29,6 +35,7 @@ class Settings:
     close_to_tray: bool = True
     bands: dict[str, tuple[float, float]] = field(default_factory=dict)   # 只放改過的
     tray_hint_shown: bool = False                                        # 「還在系統匣」的提示顯示過了沒
+    colors: dict[str, str] = field(default_factory=dict)                 # 只放改過的
 
     def merged_bands(self) -> dict[str, Band]:
         out = dict(DEFAULTS)
@@ -52,6 +59,20 @@ def only_changes(bands: dict[str, tuple[float, float]]) -> dict[str, tuple[float
     return out
 
 
+def valid_color(value: object) -> bool:
+    return isinstance(value, str) and (value in COLOR_PRESETS or HEX_COLOR.match(value) is not None)
+
+
+def color_changes(colors: dict) -> dict[str, str]:
+    """跟預設一樣的顏色不存（同 only_changes）；自訂色一律小寫；不認得的丟掉。"""
+    out = {}
+    for kind, value in colors.items():
+        value = value.lower() if isinstance(value, str) else value
+        if kind in COLOR_DEFAULTS and valid_color(value) and value != COLOR_DEFAULTS[kind]:
+            out[kind] = value
+    return out
+
+
 def parse(data: object) -> Settings:
     s = Settings()
     if not isinstance(data, dict):
@@ -70,13 +91,15 @@ def parse(data: object) -> Settings:
                 continue
             if kind in DEFAULTS and valid_band(warm, hot):
                 bands[kind] = (warm, hot)
+    colors = color_changes(data["colors"]) if isinstance(data.get("colors"), dict) else {}
     return Settings(unit=unit, interval=interval, close_to_tray=close, bands=only_changes(bands),
-                    tray_hint_shown=hint)
+                    tray_hint_shown=hint, colors=colors)
 
 
 def to_json(s: Settings) -> dict:
     return {"unit": s.unit, "interval": s.interval, "closeToTray": s.close_to_tray,
-            "bands": {k: list(v) for k, v in s.bands.items()}, "trayHintShown": s.tray_hint_shown}
+            "bands": {k: list(v) for k, v in s.bands.items()}, "trayHintShown": s.tray_hint_shown,
+            "colors": dict(s.colors)}
 
 
 class SettingsStore:
@@ -108,6 +131,13 @@ class SettingsStore:
                     raise ValueError(f"{kind} 的門檻不合理：偏高要小於過熱，而且在 "
                                      f"{BAND_RANGE[0]:.0f}～{BAND_RANGE[1]:.0f}°C 之間")
             changes["bands"] = only_changes(changes["bands"])
+        if "colors" in changes:
+            for kind, value in changes["colors"].items():
+                if kind not in COLOR_DEFAULTS:
+                    raise ValueError(f"不認得的種類：{kind}")
+                if not valid_color(value.lower() if isinstance(value, str) else value):
+                    raise ValueError(f"{COLOR_LABELS[kind]} 的顏色不認得：{value}（要調色盤裡的顏色或 #rrggbb）")
+            changes["colors"] = color_changes(changes["colors"])
         if "unit" in changes and changes["unit"] not in UNITS:
             raise ValueError(f"溫度單位只能是 {'、'.join(UNITS)}")
         if "interval" in changes and changes["interval"] not in INTERVALS:

@@ -2,10 +2,13 @@
 專有名詞附一句說明。純函式、不碰硬體，tests/test_details.py 用示範資料測。
 
 輸出就是 GET /api/device?id= 的內容（欄位改了要同步 frontend/src/types.ts 的 DeviceDetail）：
-    {id, kind, name, sub, sections: [{title, note?, rows?, table?, bars?}]}
-    row   = {label, value, unit?, note?, temp?, level?, min?, max?}   溫度一律 °C、temp: true（前端換 °F）
-    table = {columns: [{label, unit?}], rows: [{label, cells: [...]}]}
-    bars  = {label, unit, max, items: [{label, value}]}
+    {id, kind, name, sub, sections: [{title, note?, measure?, rows?, table?, bars?, ranking?}]}
+    row     = {label, value, unit?, note?, temp?, level?, min?, max?, measure?}   溫度一律 °C、temp: true（前端換 °F）
+    table   = {columns: [{label, unit?}], rows: [{label, cells: [...]}]}
+    bars    = {label, unit, max, items: [{label, value}]}
+    ranking = {total?: {value, unit}, items: [{label, note, value, unit, share}]}   排行（顯存被誰佔用），share 是佔總量幾成
+measure 是這段量的是什麼（temp、load、clock、power、fan、data、flow），前端照它配圖示與數值的顏色；
+「其他讀數」什麼都有，改成每一行自己帶 measure。
 挑剩的感測器放在最後的「其他讀數」，新硬體的讀數也不會漏掉。
 """
 from __future__ import annotations
@@ -22,6 +25,9 @@ UNITS = {"Voltage": "V", "Current": "A", "Power": "W", "Clock": "MHz", "Load": "
          "TimeSpan": "s", "Timing": "ns", "Energy": "mWh", "Noise": "dBA", "Humidity": "%"}
 DIGITS = {"Voltage": 3, "Current": 2, "Power": 1, "Clock": 0, "Load": 0, "Fan": 0, "Control": 0, "Level": 0, "Factor": 0,
           "SmallData": 0}
+MEASURES = {"Temperature": "temp", "Load": "load", "Clock": "clock", "Power": "power", "Voltage": "power",
+            "Current": "power", "Energy": "power", "Fan": "fan", "Control": "fan", "Flow": "fan", "Data": "data",
+            "SmallData": "data", "Throughput": "flow"}   # 感測器種類 → 量的是什麼（「其他讀數」每一行用）
 MEDIA_NAMES = {"nvme": "NVMe SSD", "ssd": "SATA SSD", "hdd": "機械硬碟"}
 PROCESS_MIN_BYTES = 100 * 2**20               # 顯存被誰佔用：只列超過 100 MB 的程式（使用者 2026-10-31）
 HEALTH_NAMES = {"healthy": "良好", "warning": "警告", "unhealthy": "不良"}
@@ -123,22 +129,31 @@ def _limit(s: RawSensor | None, title: str, note: str) -> dict | None:
     return {"label": title, "value": _round(s.value, 0), "unit": "°C", "temp": True, "note": note}
 
 
-def _section(title: str, rows: Iterable[dict | None] = (), note: str | None = None, *,
-             table: dict | None = None, bars: dict | None = None, keep: bool = False) -> dict | None:
+def _section(title: str, rows: Iterable[dict | None] = (), note: str | None = None, *, measure: str | None = None,
+             table: dict | None = None, bars: dict | None = None, ranking: dict | None = None,
+             keep: bool = False) -> dict | None:
     """沒有內容的段落不列；keep=True 時只有說明也列（例如「目前沒有程式超過 100 MB」）。"""
     rows = [r for r in rows if r is not None]
-    if not rows and table is None and bars is None and not keep:
+    if not rows and table is None and bars is None and ranking is None and not keep:
         return None
     sec: dict = {"title": title}
     if note:
         sec["note"] = note
+    if measure:
+        sec["measure"] = measure
     if rows:
         sec["rows"] = rows
     if table is not None:
         sec["table"] = table
     if bars is not None:
         sec["bars"] = bars
+    if ranking is not None:
+        sec["ranking"] = ranking
     return sec
+
+
+def _bytes(n: float) -> tuple[float | int, str]:
+    return (round(n / 2**30, 1), "GB") if n >= 2**30 else (round(n / 2**20), "MB")
 
 
 class _Picker:
@@ -167,7 +182,14 @@ class _Picker:
 
 
 def _others(p: _Picker, levels: dict[str, str]) -> dict | None:
-    rows = [_temp(s, None, levels) if s.type == "Temperature" else _reading(s) for s in p.rest()]
+    rows = []
+    for s in p.rest():
+        if s.type == "Temperature":
+            rows.append(_temp(s, None, levels))
+        elif (row := _reading(s)) is not None:
+            if s.type in MEASURES:
+                row["measure"] = MEASURES[s.type]
+            rows.append(row)
     return _section("其他讀數", rows, "沒有歸類的感測器，認不得的名稱照硬體回報的原文")
 
 
@@ -267,9 +289,10 @@ def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
              _reading(p.one("Power", "CPU Cores"), "核心功耗", "只算 CPU 核心，不含內顯與其他部分"),       # Intel
              _reading(p.one("Voltage", "Core (SVI2 TFN)", "CPU Core"), "核心電壓", "CPU 回報給主機板供電的核心電壓"),
              _reading(p.one("Voltage", "SoC (SVI2 TFN)"), "SoC 電壓", "記憶體控制器、I/O 那一塊的電壓")]
-    return [_section("規格", spec), _section("溫度", temps),
-            _section("負載", loads, bars=bars if threads else None),
-            _section("時脈", clocks, table=_per_core(p)), _section("功耗與電壓", power), _others(p, levels)]
+    return [_section("規格", spec), _section("溫度", temps, measure="temp"),
+            _section("負載", loads, measure="load", bars=bars if threads else None),
+            _section("時脈", clocks, measure="clock", table=_per_core(p)),
+            _section("功耗與電壓", power, measure="power"), _others(p, levels)]
 
 
 def _gpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: dict,
@@ -306,18 +329,28 @@ def _gpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
     users = None
     if specs.get("gpuProcesses") is not None:              # 只有服務查得到時才有（device_details 的 procs）
         big = [x for x in specs["gpuProcesses"] if x["bytes"] >= PROCESS_MIN_BYTES]
-        rows = [_row(x["name"], *((round(x["bytes"] / 2**30, 1), "GB") if x["bytes"] >= 2**30
-                                  else (round(x["bytes"] / 2**20), "MB")), f'PID {x["pid"]}') for x in big]
+        whole = total.value * 2**20 if total is not None and total.value else max((x["bytes"] for x in big), default=0)
+        items = [{"label": x["name"], "note": f'PID {x["pid"]}', **dict(zip(("value", "unit"), _bytes(x["bytes"]))),
+                  "share": round(min(1.0, x["bytes"] / whole), 3)} for x in big]
+        ranking = None
+        if items:   # 跟讀數長得不一樣：名次＋佔總顯存的長條（使用者 2026-11-01 說會跟其他讀數混在一起）
+            ranking = {"items": items}
+            if total is not None and total.value:
+                value, unit = _bytes(whole)
+                ranking["total"] = {"value": value, "unit": unit}
         note = "Windows 統計各程式用掉的專用顯存（跟工作管理員一樣），只列超過 100 MB 的"
-        users = _section("顯存被誰佔用", rows, note if rows else note + "；目前沒有程式超過", keep=True)
+        users = _section("顯存被誰佔用", (), note if items else note + "；目前沒有程式超過", measure="data",
+                         ranking=ranking, keep=True)
     fans = _fan_table(p)
     stopped = fans is not None and all(not r["cells"][0] for r in fans["rows"])
     pcie = [_reading(p.one("Throughput", "GPU PCIe Rx"), "接收"), _reading(p.one("Throughput", "GPU PCIe Tx"), "傳送")]
-    return [_section("規格", spec), _section("溫度", temps),
-            _section("負載", loads, "3D 是遊戲與繪圖，複製是搬資料，影片編碼／解碼是錄影與播放", bars=bars if engines else None),
-            _section("時脈", clocks), _section("顯存", vram), users, _section("功耗與電壓", power),
-            _section("風扇", (), "溫度低時風扇會停轉（零轉速模式），是正常的" if stopped else None, table=fans),
-            _section("PCIe 傳輸", pcie, "顯示卡跟主機板之間的資料量"), _others(p, levels)]
+    return [_section("規格", spec), _section("溫度", temps, measure="temp"),
+            _section("負載", loads, "3D 是遊戲與繪圖，複製是搬資料，影片編碼／解碼是錄影與播放", measure="load",
+                     bars=bars if engines else None),
+            _section("時脈", clocks, measure="clock"), _section("顯存", vram, measure="data"), users,
+            _section("功耗與電壓", power, measure="power"),
+            _section("風扇", (), "溫度低時風扇會停轉（零轉速模式），是正常的" if stopped else None, measure="fan", table=fans),
+            _section("PCIe 傳輸", pcie, "顯示卡跟主機板之間的資料量", measure="flow"), _others(p, levels)]
 
 
 def _board(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: dict,
@@ -340,8 +373,9 @@ def _board(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: 
     for s in p.many("Voltage"):
         title, note = VOLTAGES.get(s.name, (None, None))
         volts.append(_reading(s, title, note))
-    return [_section("規格", spec), _section("溫度", temps), _section("風扇", table=_fan_table(p)),
-            _section("電壓", volts, "+12V、+5V、+3.3V 在 ±5% 內都算正常"), _others(p, levels)]
+    return [_section("規格", spec), _section("溫度", temps, measure="temp"),
+            _section("風扇", measure="fan", table=_fan_table(p)),
+            _section("電壓", volts, "+12V、+5V、+3.3V 在 ±5% 內都算正常", measure="power"), _others(p, levels)]
 
 
 def _memory(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: dict,
@@ -372,12 +406,13 @@ def _memory(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs:
                           for i, m in enumerate(slots)]}
     temps = [_temp(s, None, levels) for hw in dimms for s in hw.sensors if s.type == "Temperature"]
     return [_section("規格", spec, None if temps else "這組記憶體沒有溫度感測器（DDR4 大多沒有）", table=table),
-            _section("實體記憶體", [_reading(used, "已用"), _reading(free, "可用"), _reading(pr.one("Load", "Memory"), "使用率")]),
+            _section("實體記憶體", [_reading(used, "已用"), _reading(free, "可用"), _reading(pr.one("Load", "Memory"), "使用率")],
+                     measure="data"),
             _section("虛擬記憶體", [_reading(pv.one("Data", "Memory Used"), "已用"),
                                    _reading(pv.one("Data", "Memory Available"), "可用"),
                                    _reading(pv.one("Load", "Memory"), "使用率")],
-                     "實體記憶體加上分頁檔（硬碟上的延伸空間）"),
-            _section("溫度", temps)]
+                     "實體記憶體加上分頁檔（硬碟上的延伸空間）", measure="data"),
+            _section("溫度", temps, measure="temp")]
 
 
 def _storage(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: dict,
@@ -412,15 +447,16 @@ def _storage(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs
     activity = [_reading(p.one("Throughput", "Read Rate"), "讀取速度"), _reading(p.one("Throughput", "Write Rate"), "寫入速度"),
                 _reading(p.one("Load", "Total Activity"), "忙碌", "有多少時間在讀寫"),
                 _reading(p.one("Load", "Read Activity"), "讀取忙碌"), _reading(p.one("Load", "Write Activity"), "寫入忙碌")]
-    return [_section("規格", spec), _section("健康", health), _section("溫度", temps, "硬碟每 10 秒讀一次"),
-            _section("空間", space), _section("讀寫", activity), _others(p, levels)]
+    return [_section("規格", spec), _section("健康", health), _section("溫度", temps, "硬碟每 10 秒讀一次", measure="temp"),
+            _section("空間", space, measure="data"), _section("讀寫", activity, measure="flow"), _others(p, levels)]
 
 
 def _generic(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: dict,
              levels: dict[str, str]) -> list[dict | None]:
     p = _Picker(parts)
-    return [_section("規格", [_row("名稱", dev["name"])]), _section("溫度", [_temp(s, None, levels) for s in p.many("Temperature")]),
-            _section("風扇", table=_fan_table(p)), _others(p, levels)]
+    return [_section("規格", [_row("名稱", dev["name"])]),
+            _section("溫度", [_temp(s, None, levels) for s in p.many("Temperature")], measure="temp"),
+            _section("風扇", measure="fan", table=_fan_table(p)), _others(p, levels)]
 
 
 BUILDERS: dict[str, Callable[..., list[dict | None]]] = {

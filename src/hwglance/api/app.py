@@ -32,7 +32,8 @@ from ..events.service import EventService
 from ..sensors.blackbox import BlackBox, DemoBlackBox
 from ..sensors.service import SensorService
 from ..sensors.thresholds import DEFAULTS, LABELS, cpu_band
-from ..settings import BAND_RANGE, INTERVALS, Settings, SettingsStore
+from ..settings import (BAND_RANGE, COLOR_DEFAULTS, COLOR_LABELS, COLOR_PRESETS, INTERVALS, Settings,
+                        SettingsStore)
 from . import security
 
 NO_STORE = {"Cache-Control": "no-store"}
@@ -51,6 +52,7 @@ class SettingsBody(BaseModel):
     interval: int
     closeToTray: bool
     bands: dict[str, tuple[float, float]]
+    colors: dict[str, str] | None = None      # 沒帶就不改（舊版介面存檔時不會把顏色洗掉）
 
 
 def settings_payload(s: Settings, tjmax: float | None = None) -> dict:
@@ -70,6 +72,10 @@ def settings_payload(s: Settings, tjmax: float | None = None) -> dict:
         "labels": labels,
         "intervals": list(INTERVALS),
         "range": list(BAND_RANGE),
+        "colors": {**COLOR_DEFAULTS, **s.colors},
+        "colorDefaults": dict(COLOR_DEFAULTS),
+        "colorLabels": dict(COLOR_LABELS),
+        "presets": list(COLOR_PRESETS),
     }
 
 
@@ -135,8 +141,11 @@ def create_app(service: SensorService, token: str | None = None,
         bands = {k: (float(w), float(h)) for k, (w, h) in body.bands.items()}
         if tjmax and bands.get("cpu") == (cpu_band(tjmax).warm, cpu_band(tjmax).hot):
             bands.pop("cpu")                         # 跟這台照 TjMax 算的預設一樣：當成沒改，換 CPU 也會跟著變
+        changes = {"unit": body.unit, "interval": body.interval, "close_to_tray": body.closeToTray, "bands": bands}
+        if body.colors is not None:
+            changes["colors"] = body.colors
         try:
-            saved = store.update(unit=body.unit, interval=body.interval, close_to_tray=body.closeToTray, bands=bands)
+            saved = store.update(**changes)
         except ValueError as e:
             return JSONResponse({"detail": str(e)}, status_code=400)
         return JSONResponse(settings_payload(saved, tjmax), headers=NO_STORE)

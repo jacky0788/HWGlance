@@ -20,8 +20,8 @@ export function BoardCard({ device, onOpen }: { device: Device; onOpen: (id: str
         </p>
       )}
       {device.fans.length > 0 ? (
-        <>
-          <h4 className="mt-4 mb-1 flex items-center gap-1.5 text-xs font-semibold text-fg-subtle">
+        <div className="m-fan">
+          <h4 className="mt-4 mb-1 flex items-center gap-1.5 text-xs font-semibold text-(--m)">
             <FanIcon className="size-3.5" aria-hidden /> 風扇
           </h4>
           <ul className="m-0 p-0 list-none">
@@ -29,14 +29,14 @@ export function BoardCard({ device, onOpen }: { device: Device; onOpen: (id: str
               <li key={f.id} className="flex items-baseline justify-between gap-3 py-1.5 border-t border-line first:border-t-0">
                 <span className="text-sm text-fg-muted truncate">{f.label}</span>
                 <span className="num text-sm">
-                  {f.value == null ? "—" : f.value.toLocaleString("zh-TW")}
+                  <span className="text-(--m)">{f.value == null ? "—" : f.value.toLocaleString("zh-TW")}</span>
                   <span className="ml-1 text-xs text-fg-subtle">RPM</span>
                   {f.percent != null ? <span className="ml-2 text-xs text-fg-subtle">{f.percent}%</span> : null}
                 </span>
               </li>
             ))}
           </ul>
-        </>
+        </div>
       ) : null}
       {device.unplugged > 0 ? (
         <p className="mt-2 mb-0 text-xs text-fg-subtle">另有 {device.unplugged} 個風扇接頭沒接（或從沒轉過）</p>

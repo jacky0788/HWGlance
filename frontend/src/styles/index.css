@@ -76,6 +76,48 @@ body {
   --kind: var(--kind-other);
 }
 
+/* 數值量的是什麼（lib/measures.ts）：外層加 m-load…，裡面用 var(--m)。
+   溫度不靠這個上色（照等級）；m-temp、m-none 只給段落標題的圖示一個不搶眼的灰。 */
+.m-load,
+.m-flow {
+  --m: var(--m-load);
+}
+.m-clock {
+  --m: var(--m-clock);
+}
+.m-power {
+  --m: var(--m-power);
+}
+.m-fan {
+  --m: var(--m-fan);
+}
+.m-data {
+  --m: var(--m-data);
+}
+.m-temp,
+.m-none {
+  --m: var(--fg-subtle);
+}
+
+/* 設定頁「自訂」顏色：瀏覽器內建的取色方塊改成跟其他色票一樣的圓點 */
+.swatch-input {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.swatch-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.swatch-input::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
 /* 溫度等級：外層加 level-ok／-warm／-hot／-none。
    --level：溫度數字的顏色，一律照等級（綠／黃／紅），不受種類影響。
    --deco：磚塊色條、儀表弧、走勢線這些裝飾，正常時用硬體種類色（外層有 kind-*），偏高、過熱才變黃、紅。 */

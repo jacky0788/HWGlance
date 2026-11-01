@@ -1,11 +1,13 @@
 // 同一個網頁兩種畫面：主畫面（/）與迷你視窗（/?view=mini）。主畫面有兩頁：即時監控（#live，預設）與事件記錄（#events）。
-// 溫度單位從快照的 prefs 來，用 context 往下傳。在事件記錄頁時快照照樣每秒抓，切回來折線圖才不會斷。
+// 溫度單位從快照的 prefs 來，用 context 往下傳；卡片顏色也從 prefs 來，寫在 <html> 上（lib/colors.ts）。
+// 在事件記錄頁時快照照樣每秒抓，切回來折線圖才不會斷。
 import { useEffect, useState } from "react";
 import { useEventBadge } from "../features/events/useEvents";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { TopBar } from "../features/status/StatusBar";
 import type { Page } from "../features/status/StatusBar";
 import { currentView, switchView } from "../lib/bridge";
+import { useKindColors } from "../lib/colors";
 import { UnitContext } from "../lib/prefs";
 import { useHistory } from "../lib/useHistory";
 import { useSnapshot } from "../lib/useSnapshot";
@@ -38,6 +40,7 @@ function MainApp() {
   const badge = useEventBadge();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const ready = snap != null && (snap.seq > 0 || snap.state === "error");
+  useKindColors(snap?.prefs?.colors);
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [page]);
@@ -63,6 +66,7 @@ function MainApp() {
 
 function MiniApp() {
   const { snap, error } = useSnapshot();
+  useKindColors(snap?.prefs?.colors);
   useEffect(() => {
     document.documentElement.classList.add("mini");
     return () => {

@@ -46,7 +46,7 @@ class SensorService:
         self.interval = interval
         self.slow_every = max(1, slow_every)
         self.bands = bands
-        self.prefs: dict = {"unit": "C"}              # 原樣放進快照，給前端決定怎麼顯示
+        self.prefs: dict = {"unit": "C", "colors": {}}   # 原樣放進快照，給前端決定怎麼顯示
         self._listeners: list[Callable[[dict], None]] = []
         self.history = History(max(10, round(history_seconds / interval)))
         self._env = env

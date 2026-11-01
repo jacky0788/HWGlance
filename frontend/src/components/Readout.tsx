@@ -1,14 +1,23 @@
-// 卡片裡的一格數值：上面小標題、下面數字。溫度用等級的顏色。
+// 卡片裡的一格數值：上面小標題（圖示＋名稱）、下面數字。
+// 負載、時脈、功耗、風扇、顯存各用自己的顏色（lib/measures.ts），溫度用等級的顏色。
+import { Thermometer } from "lucide-react";
 import { stat as showStat, temp, tempExact } from "../lib/format";
+import { MEASURE_ICONS, colored, statMeasure } from "../lib/measures";
 import { useUnit } from "../lib/prefs";
 import type { Kind, Stat, Temp } from "../types";
 
 export function StatReadout({ stat, kind }: { stat: Stat; kind: Kind }) {
   const shown = showStat(stat, kind);
+  const m = statMeasure(stat.key);
+  const Icon = MEASURE_ICONS[m];
+  const tone = colored(m) ? "text-(--m)" : "text-fg-subtle";
   return (
-    <div className="min-w-0">
-      <dt className="text-xs text-fg-subtle">{stat.label}</dt>
-      <dd className="m-0 num font-medium">
+    <div className={`m-${m} min-w-0`}>
+      <dt className={`flex items-center gap-1 text-xs ${tone}`}>
+        <Icon className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">{stat.label}</span>
+      </dt>
+      <dd className={`m-0 num font-medium ${colored(m) ? "text-(--m)" : ""}`}>
         {shown.value} <span className="text-xs text-fg-subtle">{shown.unit}</span>
         {shown.note ? <span className="text-xs text-fg-subtle">・{shown.note}</span> : null}
       </dd>
@@ -20,7 +29,10 @@ export function TempReadout({ t }: { t: Temp }) {
   const unit = useUnit();
   return (
     <div className={`level-${t.level} min-w-0`} title={`最低 ${tempExact(t.min, unit)}、最高 ${tempExact(t.max, unit)}`}>
-      <dt className="text-xs text-fg-subtle truncate">{t.label}</dt>
+      <dt className="flex items-center gap-1 text-xs text-fg-subtle">
+        <Thermometer className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">{t.label}</span>
+      </dt>
       <dd className="m-0 num font-medium text-(--level)">{temp(t.value, unit)}</dd>
     </div>
   );
