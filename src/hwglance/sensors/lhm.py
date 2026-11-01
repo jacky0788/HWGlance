@@ -5,16 +5,21 @@
 不是系統管理員時 LHM 照樣開得起來，只是讀得到的東西少（大概只剩顯示卡與各種用量）。
 
 LHM 的物件只在感測執行緒裡用（open／update／read 都由 SensorService 的同一個執行緒呼叫）。
+
+某一類硬體讀失敗（例如顯示卡重設時 NVML 存取違規）不會拖垮整個程式：那一類先停讀、穩定了關掉重開，
+規則在 guard.py。.NET 4 預設接不到原生程式碼裡的存取違規，所以 CLR 啟動前要設 CSE_POLICY（見 open）。
 """
 from __future__ import annotations
 
 import math
+import os
 import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from .. import system
+from .guard import LABELS, Guard
 from .model import RawHardware, RawSensor
 
 # 名稱 → LHM Computer 上的開關
@@ -31,8 +36,18 @@ COMPONENTS = {
 }
 DEFAULT_COMPONENTS = ("cpu", "gpu", "motherboard", "controller", "memory", "storage", "psu")
 ALL_COMPONENTS = tuple(COMPONENTS)
+# LHM 的硬體種類 → 屬於哪一類（出錯時停讀、重開的單位）
+COMPONENT_OF_TYPE = {"Cpu": "cpu", "GpuNvidia": "gpu", "GpuAmd": "gpu", "GpuIntel": "gpu",
+                     "Motherboard": "motherboard", "SuperIO": "motherboard", "EmbeddedController": "motherboard",
+                     "Memory": "memory", "Storage": "storage", "Cooler": "controller", "Psu": "psu",
+                     "Network": "network", "Battery": "battery"}
 # 這些硬體讀得慢、溫度也變得慢：只在 slow 的那一輪更新（硬碟 SMART 每次要幾十毫秒）
 SLOW_TYPES = frozenset({"Storage"})
+# .NET 4 起，原生程式碼裡的存取違規（Corrupted State Exception）一般的 catch 接不到，整個程式直接結束。
+# CLR 啟動前設這個環境變數就接得到（2026-11-01 在這台驗證：P/Invoke 進原生 DLL 的存取違規 200 次都傳回 Python）。
+CSE_POLICY = "COMPlus_legacyCorruptedStateExceptionsPolicy"
+FRIENDLY_ERRORS = {"AccessViolationException": "存取違規", "SEHException": "原生程式出錯",
+                   "NullReferenceException": "空參考", "IOException": "讀寫錯誤", "TimeoutException": "逾時"}
 
 
 def _text(x: Any) -> str:
@@ -61,15 +76,32 @@ def convert(hw: Any) -> RawHardware:
         children=[convert(sub) for sub in hw.SubHardware])
 
 
-def update_tree(hw: Any, slow: bool, errors: list[str]) -> None:
-    """LHM 的 Motherboard.Update() 是空的，子硬體（Super I/O、EC）要自己一層層更新。"""
+def component_of(hw: Any) -> str | None:
+    return COMPONENT_OF_TYPE.get(_text(hw.HardwareType))
+
+
+def describe_error(e: BaseException) -> str:
+    """.NET 例外 → 一句話（存取違規、讀寫錯誤…）。反射呼叫時外面會包一層 TargetInvocationException。"""
+    inner = getattr(e, "InnerException", None)
+    name = type(e).__name__
+    if name == "TargetInvocationException" and inner is not None:
+        name = _text(inner.GetType().Name) if hasattr(inner, "GetType") else type(inner).__name__
+    return FRIENDLY_ERRORS.get(name, name)
+
+
+def update_tree(hw: Any, slow: bool) -> BaseException | None:
+    """更新一個硬體。LHM 的 Motherboard.Update() 是空的，子硬體（Super I/O、EC）要自己一層層更新。
+    出錯就停在那裡、回傳那個例外：同一類的其他部分多半也有問題，交給 guard 停讀那一類。"""
     if slow or _text(hw.HardwareType) not in SLOW_TYPES:
         try:
             hw.Update()
-        except Exception as e:                       # noqa: BLE001 - 一個硬體讀失敗不該拖垮其他的
-            errors.append(f"{hw.Name}: {e}")
+        except Exception as e:                       # noqa: BLE001 - .NET 的例外（含存取違規）都會變成 Python 例外
+            return e
     for sub in hw.SubHardware:
-        update_tree(sub, slow, errors)
+        error = update_tree(sub, slow)
+        if error is not None:
+            return error
+    return None
 
 
 # ---- 規格（開啟後讀一次）：SMBIOS 由 LHM 讀好；硬碟與顯示卡驅動查 WMI（.NET 的 System.Management，唯讀） ----
@@ -189,11 +221,12 @@ def _wmi(namespace: str, table: str, fields: Iterable[str]) -> list[dict]:
 class LhmSource:
     kind = "lhm"
 
-    def __init__(self, lhm_dir: Path, components: Iterable[str] = DEFAULT_COMPONENTS) -> None:
+    def __init__(self, lhm_dir: Path, components: Iterable[str] = DEFAULT_COMPONENTS, guard: Guard | None = None) -> None:
         self.lhm_dir = Path(lhm_dir)
         self.components = tuple(components)
         self.version: str | None = None
-        self.errors: list[str] = []
+        self.guard = guard or Guard()
+        self.errors: list[str] = []                   # 不屬於任何一類的硬體讀失敗（照理不會有）
         self.spec_errors: list[str] = []
         self._computer: Any = None
 
@@ -205,7 +238,14 @@ class LhmSource:
             sys.path.append(str(self.lhm_dir))        # pythonnet 從 sys.path 找相依的 DLL
         import pythonnet
         if pythonnet.get_runtime_info() is None:
-            pythonnet.load("netfx")
+            os.environ[CSE_POLICY] = "1"
+            try:
+                pythonnet.load("netfx")
+                import clr  # noqa: F401 - 跑一點 .NET 程式碼，確定 CLR 已經啟動、讀過設定
+            finally:
+                # CLR 只在啟動時讀，之後拿掉也照樣有效（2026-11-01 驗證過）；
+                # 不拿掉的話，視窗子程序（pywebview 也用 .NET）會繼承，改變它當掉時的行為
+                os.environ.pop(CSE_POLICY, None)
         import clr                                    # pythonnet 的入口，import 之後才能 AddReference
         clr.AddReference("LibreHardwareMonitorLib")
         from LibreHardwareMonitor.Hardware import Computer   # type: ignore[import-not-found]
@@ -219,13 +259,63 @@ class LhmSource:
         self._computer = computer
 
     def update(self, slow: bool = True) -> None:
+        """更新一輪。暫停中的那一類不碰（不呼叫 LHM，也就不會再碰到正在重設的驅動）；該重開的先重開。"""
+        for kind in self.guard.due():
+            self._reopen(kind)
         errors: list[str] = []
         for hw in self._computer.Hardware:
-            update_tree(hw, slow, errors)
+            kind = component_of(hw)
+            if kind is not None and self.guard.paused(kind):
+                continue
+            error = update_tree(hw, slow)
+            if error is None:
+                continue
+            print(f"{hw.Name} 讀取失敗：{error!r}", flush=True)
+            if kind is None:
+                errors.append(f"{hw.Name}: {error}")
+            else:
+                self.guard.trip(kind, f"讀取時{describe_error(error)}")
         self.errors = errors
 
     def read(self) -> list[RawHardware]:
-        return [convert(hw) for hw in self._computer.Hardware]
+        out = []
+        for hw in self._computer.Hardware:
+            raw = convert(hw)
+            kind = component_of(hw)
+            out.append(raw.without_values() if kind is not None and self.guard.paused(kind) else raw)
+        return out
+
+    def notes(self) -> list[str]:
+        """畫面上方的提醒：哪一類暫停讀取、什麼時候重新連上（guard.py）。"""
+        return self.guard.notes()
+
+    def _reopen(self, kind: str) -> None:
+        """把那一類關掉再打開：LHM 丟掉舊的硬體物件、重新抓（顯示卡會重新初始化 NVAPI／NVML）。"""
+        if kind not in self.components:              # 本來就沒開的（例如驅動報錯但顯示卡沒開）不要順手打開
+            self.guard.reopened(kind)
+            return
+        switch = COMPONENTS[kind]
+        closed: BaseException | None = None
+        for _ in range(2):
+            # 關的時候出錯（例如 NVML 收不乾淨），LHM 已經把那一組拿掉、卻還記著「開著」；再關一次才會記成關了，
+            # 不然下面設 True 不會有反應
+            try:
+                setattr(self._computer, switch, False)
+                closed = None
+                break
+            except Exception as e:                   # noqa: BLE001
+                print(f"關閉{LABELS.get(kind, kind)}失敗：{e!r}", flush=True)
+                closed = e
+        if closed is not None:
+            self.guard.reopened(kind, f"關閉時{describe_error(closed)}")
+            return
+        try:
+            setattr(self._computer, switch, True)
+        except Exception as e:                       # noqa: BLE001
+            print(f"重新開啟{LABELS.get(kind, kind)}失敗：{e!r}", flush=True)
+            self.guard.reopened(kind, f"重新開啟時{describe_error(e)}")
+            return
+        self.guard.reopened(kind)
 
     def report(self) -> str:
         """LHM 自己的完整報告（晶片型號、驅動狀態…），探測時存檔用。"""

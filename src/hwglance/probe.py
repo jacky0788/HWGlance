@@ -140,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
             lines.append(f"這個程序的記憶體：{ws:.0f} MB")
         for e in getattr(source, "errors", []):
             lines.append(f"讀取錯誤：{e}")
+        for note in source.notes():                      # 讀失敗而暫停讀取的那一類（sensors/guard.py）
+            lines.append(f"暫停讀取：{note}")
         lines.append("")
         lines += snapshot_lines(normalize(tree))
         lines += [""] + spec_lines(source.specs(), getattr(source, "spec_errors", []))

@@ -28,6 +28,7 @@ class Source(Protocol):
     def update(self, slow: bool = True) -> None: ...
     def read(self) -> list[RawHardware]: ...
     def close(self) -> None: ...
+    # 可以沒有：errors（讀失敗的訊息）、notes()（畫面上方的提醒）、specs()、gpu_processes()
 
 
 def dumps(obj) -> bytes:
@@ -204,6 +205,9 @@ class SensorService:
     def _source_info(self) -> dict:
         env = self._env or {"admin": False, "pawnio": None}
         notes = system.hints(self.source.kind, env["admin"], env["pawnio"])
+        source_notes = getattr(self.source, "notes", None)          # 哪一類暫停讀取、重新連上（guard.py）
+        if callable(source_notes):
+            notes.extend(source_notes())
         errors = getattr(self.source, "errors", None) or []
         if self._error:
             notes.append(self._error)

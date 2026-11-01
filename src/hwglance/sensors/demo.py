@@ -5,6 +5,9 @@
 RTX 50 系列沒有熱點溫度、CCD 溫度每秒亂跳。規格（specs）照同一天的 LHM 報告與 HWMonitor 報告。
 負載在閒置與高負載之間交替（像開遊戲、關遊戲），溫度用一階延遲慢慢追，像真的散熱一樣。
 開發介面（python -m hwglance --serve --demo）與測試用。
+
+gpu_reset_at＝開啟後第幾秒模擬顯示卡重設（--demo-gpu-reset）：顯示卡讀取「存取違規」→ 跟真的一樣交給
+guard.py 停讀、1 分鐘後重新連上，用來看畫面上的提醒與「—」。
 """
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ import random
 import time
 from collections.abc import Callable
 
+from .guard import Guard
 from .model import RawHardware, RawSensor
 
 # (Identifier, 型號, 閒置溫度, 高負載時多幾度, 已用 %, 總容量 GB)；順序與編號照真機（LHM 用實體磁碟編號）
@@ -70,9 +74,12 @@ class DemoSource:
     kind = "demo"
     version = "demo"
 
-    def __init__(self, seed: int | None = None, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, seed: int | None = None, clock: Callable[[], float] = time.monotonic,
+                 gpu_reset_at: float | None = None, guard: Guard | None = None) -> None:
         self._rng = random.Random(seed)
         self._clock = clock
+        self.guard = guard or Guard()
+        self._gpu_reset_at = gpu_reset_at
         self._t0 = self._last = clock()
         self._cpu = _Lag(52.0, 6.0)
         self._gpu = _Lag(48.0, 14.0)
@@ -131,6 +138,11 @@ class DemoSource:
         dt = min(5.0, max(0.05, now - self._last))
         self._last = now
         t = now - self._t0
+        for kind in self.guard.due():                # 示範：重開一定成功
+            self.guard.reopened(kind)
+        if self._gpu_reset_at is not None and t >= self._gpu_reset_at:
+            self._gpu_reset_at = None
+            self.guard.trip("gpu", "模擬讀取時存取違規")
         v = self._v
         cpu_load = self._busy(t, 150.0, 0.0)
         gpu_load = self._busy(t, 150.0, 0.02)
@@ -157,7 +169,13 @@ class DemoSource:
 
     def read(self) -> list[RawHardware]:
         # 順序照真機：主機板、CPU、記憶體、顯示卡、硬碟
-        return [self._board_hw(), self._cpu_hw(), *self._memory_hw(), self._gpu_hw(), *self._drives_hw()]
+        gpu = self._gpu_hw()
+        if self.guard.paused("gpu"):
+            gpu = gpu.without_values()
+        return [self._board_hw(), self._cpu_hw(), *self._memory_hw(), gpu, *self._drives_hw()]
+
+    def notes(self) -> list[str]:
+        return self.guard.notes()
 
     def _cpu_hw(self) -> RawHardware:
         v, hid, s = self._v, "/amdcpu/0", self._sensor

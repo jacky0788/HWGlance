@@ -17,13 +17,14 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 
 | 位置 | 放什麼 |
 |---|---|
-| `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware`；`specs()` 讀規格（SMBIOS＋WMI 的硬碟與顯示卡驅動） |
+| `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL（CLR 啟動前設 `CSE_POLICY`，存取違規才接得到）、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware`；某一類讀失敗交給 `guard.py` 停讀、到時候 `Is*Enabled` 關掉重開；`specs()` 讀規格（SMBIOS＋WMI 的硬碟與顯示卡驅動） |
 | `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣 |
 | `src/hwglance/sensors/model.py` | `RawHardware`／`RawSensor`（LHM 與示範資料共用的形狀） |
 | `src/hwglance/sensors/normalize.py` | 整理：分類、總覽磚塊、主溫度、負載／時脈／功耗、風扇。純函式，`tests/test_normalize.py` 用假樹測 |
 | `src/hwglance/sensors/details.py` | 點硬體跳出的詳細資訊：規格＋所有讀數分段（規格、溫度、負載…），中文名稱、單位、一句說明；挑剩的放「其他讀數」。純函式，`tests/test_details.py` 用示範資料測 |
 | `src/hwglance/sensors/labels.py`、`thresholds.py` | 英文感測器名稱 → 中文；溫度門檻（正常／偏高／過熱） |
 | `src/hwglance/sensors/history.py`、`service.py` | 最近 10 分鐘的歷史；背景執行緒＋快照快取（硬碟每 10 輪才讀一次） |
+| `src/hwglance/sensors/guard.py` | 讀取的保險（SPEC D25）：某一類讀失敗或顯示卡驅動報錯 → 停讀那一類（值顯示「—」、畫面上方說明）→ 穩定 1 分鐘後由 `lhm.py` 關掉重開；純邏輯，`tests/test_guard.py` |
 | `src/hwglance/api/` | `app.py` 端點（清單在檔案開頭）、`security.py` Host 檢查與 token |
 | `src/hwglance/settings.py` | 設定 `data/settings.json`：單位、更新頻率、關視窗留在系統匣、門檻（只存改過的）；壞掉就用預設 |
 | `src/hwglance/core.py` | 本體：服務＋伺服器＋系統匣＋視窗控制（`Window`：開、叫到前面、排切換指令、結束）、套用設定、選埠 |
@@ -32,7 +33,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
 | `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
-| `src/hwglance/events/` | 事件記錄（SPEC D24）：`reader.py` 讀 Windows 事件記錄（wevtapi，ctypes，唯讀）、`catalog.py` 要讀哪些事件（`WATCHED`）與每種的中文說明、藍屏代碼、建議、`incidents.py` 歸成一件件事（純函式）、`demo.py` 照這台 6～10 月的真實記錄、`service.py` 60 秒快取；`tests/test_events.py` |
+| `src/hwglance/events/` | 事件記錄（SPEC D24）：`reader.py` 讀 Windows 事件記錄（wevtapi，ctypes，唯讀）、`catalog.py` 要讀哪些事件（`WATCHED`）與每種的中文說明、藍屏代碼、建議、`incidents.py` 歸成一件件事（純函式）、`demo.py` 照這台 6～10 月的真實記錄、`service.py` 60 秒快取、`watch.py` 訂閱顯示卡驅動的新錯誤（一報錯就先停讀顯示卡，`core.py` 接到 `guard`）；`tests/test_events.py` |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
@@ -71,6 +72,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | 使用者開監控 | 雙擊 `run.bat`（第一次會跑 `setup.bat ui`：venv、LHM、建置介面；已經開著就叫出原視窗） |
 | 看這台讀得到哪些感測器 | 使用者雙擊 `probe.bat`（跳 UAC）→ 結果在 `data/probe/probe-日期-時間.txt`，agent 讀這個檔 |
 | 改介面時預覽 | `F:\Desktop\claude_project\.claude\launch.json` 的 `hwglance-demo`（埠 8797，示範資料，設定存在 `data/demo`）；迷你畫面開 `/?view=mini` |
+| 看顯示卡重設時的畫面 | launch.json 的 `hwglance-demo-gpu-reset`（埠 8798，`--demo-gpu-reset 15`：開啟 15 秒後模擬一次，約 1 分鐘後重新連上） |
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
 | 叫出迷你視窗／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden` |
 
@@ -98,6 +100,11 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 - 事件記錄（2026-10-31）：一般權限讀得到系統與應用程式記錄（agent 自己也能讀，唯讀）；系統記錄 20 MB、最早到 6/11；
   90 天約 0.9 秒。6008 的「最後運作時間」可能比真的當機早半小時以上，不能當當機時間；即時傾印的 WER 報告可能幾個月後才送，
   時間看傾印檔名；nvlddmkm 沒有訊息定義（說明在第 2 個資料欄位）。這台的歸類結果在 SPEC「第 6 段①」。
+- .NET 4 起原生程式碼裡的存取違規（Corrupted State Exception）一般的 catch 接不到，程式直接結束（10/31 顯示卡重設時本體就這樣沒了）。
+  CLR 啟動前設 `COMPlus_legacyCorruptedStateExceptionsPolicy=1` 就接得到，啟動後拿掉也照樣有效（2026-11-01 用暫存程序驗證，
+  P/Invoke 進原生 DLL 的存取違規 200 次都傳回 Python）。要驗證這類事不要故意讓程式當掉：會在事件記錄留下一筆假當機。
+- EvtSubscribe 訂閱系統記錄（拉的：Windows 設 event、EvtNext 拿）一般權限就能用；驗證時把 `events/watch.py` 的
+  `SUBSCRIBE_FLAGS` 換成 2（從最舊的開始），就能拿現有的記錄重播，不用寫假事件。
 - Python 3.14.3、pythonnet 3.2.1、pywebview 6.2.1、FastAPI 0.162；前端 React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3。
 - 不靠驅動能讀的只有顯卡（nvidia-smi 非管理員實測 70°C）。WMI 的 ACPI 溫度回「不受支援」、硬碟 SMART 非管理員被拒。
 - **auto mode 擋過 agent 執行下載的 LHM DLL**（理由 Code from External）：真的讀數由使用者跑 `probe.bat`／`run.bat`，

@@ -96,12 +96,20 @@ def test_update_tree_updates_sub_hardware_and_skips_slow_ones():
     chip = _Hardware("/lpc/x", "chip", "SuperIO")
     board = _Hardware("/motherboard", "board", "Motherboard", [], [chip])
     disk = _Hardware("/nvme/0", "disk", "Storage")
-    errors: list[str] = []
-    for hw in (board, disk):
-        update_tree(hw, slow=False, errors=errors)
+    assert [update_tree(hw, slow=False) for hw in (board, disk)] == [None, None]
     assert (board.updates, chip.updates, disk.updates) == (1, 1, 0)
-    update_tree(disk, slow=True, errors=errors)
-    assert disk.updates == 1 and errors == [] and "Storage" in SLOW_TYPES
+    assert update_tree(disk, slow=True) is None
+    assert disk.updates == 1 and "Storage" in SLOW_TYPES
+
+
+def test_update_tree_stops_at_the_first_error():
+    class Broken(_Hardware):
+        def Update(self):                      # noqa: N802
+            raise RuntimeError("讀不到")
+    chip = _Hardware("/lpc/x", "chip", "SuperIO")
+    board = Broken("/motherboard", "board", "Motherboard", [], [chip])
+    error = update_tree(board, slow=True)
+    assert isinstance(error, RuntimeError) and chip.updates == 0     # 同一類的其他部分不碰，交給 guard 停讀
 
 
 class _Obj:

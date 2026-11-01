@@ -29,5 +29,12 @@ class RawHardware:
         for child in self.children:
             yield from child.walk()
 
+    def without_values(self) -> RawHardware:
+        """暫停讀取的硬體（sensors/guard.py）：結構照舊、現在的值清掉（最低最高留著），
+        畫面顯示「—」，不會把出錯前的舊數字當成現在的。"""
+        return RawHardware(self.id, self.name, self.type,
+                           [RawSensor(s.id, s.name, s.type, None, s.min, s.max) for s in self.sensors],
+                           [child.without_values() for child in self.children])
+
     def to_dict(self) -> dict:
         return asdict(self)

@@ -220,22 +220,29 @@ def start_tray(open_ui: Callable[[str], None], quit_app: Callable[[], None]):
 
 
 def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
-        mode: str = "main", hidden: bool = False) -> int:
+        mode: str = "main", hidden: bool = False, demo_gpu_reset: float | None = None) -> int:
     streams_to_log("hwglance")
     store = SettingsStore()
+    watch = None
     if demo:
         from .events.demo import DemoEventLog
         from .sensors.demo import DemoSource
-        source, event_log = DemoSource(), DemoEventLog()
+        source, event_log = DemoSource(gpu_reset_at=demo_gpu_reset), DemoEventLog()
     else:
         from .events.reader import WindowsEventLog
+        from .events.watch import DriverWatch
         from .sensors.lhm import LhmSource
-        source, event_log = LhmSource(paths.lhm_dir()), WindowsEventLog()
+        lhm = LhmSource(paths.lhm_dir())
+        source, event_log = lhm, WindowsEventLog()
+        # 顯示卡驅動一報錯就先停讀顯示卡，不等到整張卡重設才碰上（sensors/guard.py）
+        watch = DriverWatch(lambda what: lhm.guard.trip("gpu", f"驅動回報 {what}"))
     service = SensorService(source)
     events = EventService(event_log, service.disk_models)
     apply_settings(service, store.get())
     store.subscribe(lambda s: apply_settings(service, s))
     service.start()
+    if watch is not None:
+        watch.start()
 
     port = pick_port(port)
     token = secrets.token_urlsafe(24)
@@ -261,6 +268,8 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     server.start()
     if not server.wait_ready():
         service.stop()
+        if watch is not None:
+            watch.stop()
         if tray is not None:
             tray.stop()
         print("伺服器啟動失敗，看 data/logs/hwglance.log", file=sys.stderr)
@@ -283,5 +292,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         if tray is not None:
             tray.stop()
         server.stop()
+        if watch is not None:
+            watch.stop()
         service.stop()
     return 0
