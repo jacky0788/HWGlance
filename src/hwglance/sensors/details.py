@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 
 from .labels import label
 from .model import RawHardware, RawSensor
-from .normalize import CPU_HEADLINE, STORAGE_HEADLINE, shown_min, valid_temp
+from .normalize import CPU_HEADLINE, DISTANCE, STORAGE_HEADLINE, cpu_tjmax, shown_min, valid_temp
 
 UNITS = {"Voltage": "V", "Current": "A", "Power": "W", "Clock": "MHz", "Load": "%", "Frequency": "Hz", "Fan": "RPM",
          "Flow": "L/h", "Control": "%", "Level": "%", "Data": "GB", "SmallData": "MB", "Throughput": "B/s",
@@ -34,13 +34,15 @@ CPU_HEAD_NOTES = {  # CPU 主溫度：(括號裡的名稱, 說明)
     "Core Max": ("核心最高", "所有核心裡最熱的一個"),
     "Core Average": ("核心平均", "所有核心的平均"),
 }
-CORE_COLUMNS = (  # 每個核心一列的表：(感測器種類, 名稱樣式, 欄名, 單位, 小數位)
-    ("Clock", r"(?:CPU )?Core #(\d+)", "時脈", "MHz", 0),
+CORE_COLUMNS = (  # 每個核心一列的表：(感測器種類, 名稱樣式, 欄名, 單位, 小數位)；Intel 混合架構是 P-Core／E-Core
+    ("Clock", r"(?:CPU |[PE]-)?Core #(\d+)", "時脈", "MHz", 0),
     ("Clock", r"Core #(\d+) \(Effective\)", "實際時脈", "MHz", 0),
     ("Factor", r"Core #(\d+)", "倍頻", "", 1),
     ("Power", r"Core #(\d+) \(SMU\)", "功耗", "W", 1),
     ("Voltage", r"Core #(\d+) VID", "VID", "V", 3),
+    ("Voltage", r"(?:CPU |[PE]-)?Core #(\d+)", "電壓", "V", 3),
 )
+CORE_KINDS = {"P": (0, "效能核"), "E": (1, "節能核"), None: (0, "核心")}   # 表裡的順序與名稱
 GPU_ENGINES = (  # 顯示卡各部分的負載：(名稱, 感測器名稱樣式)；同一種有好幾個（D3D Copy）取最高
     ("3D", r"D3D 3D"), ("影片編碼", r"D3D Video Encode.*"), ("影片解碼", r"D3D Video Decode.*"),
     ("複製", r"D3D Copy.*"), ("顯存控制器", r"GPU Memory Controller"), ("影片引擎", r"GPU Video Engine"),
@@ -187,7 +189,8 @@ def _fan_table(p: _Picker) -> dict | None:
 
 
 def _size(n: int) -> str:
-    return f"{n / 2**20:g} MB" if n >= 2**20 else f"{n // 1024} KB"
+    """快取大小：Intel 混合架構加起來常不是整數 MB（12700H 的 L1 是 1,248 KB），MB 取到小數一位。"""
+    return f"{round(n / 2**20, 1):g} MB" if n >= 2**20 else f"{n // 1024} KB"
 
 
 def _caches(caches: dict) -> str:
@@ -207,7 +210,7 @@ def _board_cpu(tree: list[RawHardware]) -> RawSensor | None:
 
 def _per_core(p: _Picker) -> dict | None:
     columns: list[dict] = []
-    cores: dict[int, dict[int, float | int | None]] = {}
+    cores: dict[tuple[int, int, str], dict[int, float | int | None]] = {}   # (順序, 編號, 名稱) → {欄: 值}
     for sensor_type, pattern, title, unit, digits in CORE_COLUMNS:
         found = p.many(sensor_type, pattern)
         if not found:
@@ -215,13 +218,14 @@ def _per_core(p: _Picker) -> dict | None:
         col = len(columns)
         columns.append({"label": title, "unit": unit} if unit else {"label": title})
         for s in found:
-            n = int(re.search(r"#(\d+)", s.name).group(1))
-            cores.setdefault(n, {})[col] = _round(s.value, digits)
+            m = re.search(r"(?:([PE])-)?Core #(\d+)", s.name)
+            order, word = CORE_KINDS[m.group(1)]        # 效能核 1 與節能核 1 是不同的核心，不能疊在一起
+            cores.setdefault((order, int(m.group(2)), word), {})[col] = _round(s.value, digits)
     if not columns:
         return None
     return {"columns": columns,
-            "rows": [{"label": f"核心 {n}", "cells": [cells.get(i) for i in range(len(columns))]}
-                     for n, cells in sorted(cores.items())]}
+            "rows": [{"label": f"{word} {n}", "cells": [cells.get(i) for i in range(len(columns))]}
+                     for (_, n, word), cells in sorted(cores.items())]}
 
 
 def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: dict,
@@ -241,6 +245,11 @@ def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
         short, note = CPU_HEAD_NOTES.get(head.name, (label("Temperature", head.name), None))
         temps.append(_temp(head, f"CPU 溫度（{short}）", levels, note))
     temps.append(_temp(_board_cpu(tree), "主機板量的 CPU 溫度", levels, "主機板感測器量到的，跟 CPU 自己回報的不一樣是正常的"))
+    p.many("Temperature", r".*" + re.escape(DISTANCE))   # Intel 每個核心「離 TjMax 還差幾度」：不是溫度，換成下面那一行
+    tjmax = cpu_tjmax(parts[0])
+    if tjmax is not None:
+        temps.append({"label": "降頻溫度（TjMax）", "value": tjmax, "unit": "°C", "temp": True,
+                      "note": "到這個溫度 CPU 就會降頻保護自己（從 CPU 讀的）；HWGlance 的門檻照它算"})
     for i, s in enumerate(p.many("Temperature", r"CCD.*")):
         temps.append(_temp(s, f"{label('Temperature', s.name)}（瞬間）", levels,
                            None if i else "CPU 晶片當下的溫度，每秒會跳 20～30°C，是正常的；看 CPU 溫度就好"))
@@ -255,7 +264,8 @@ def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
               _reading(p.one("Clock", "Cores (Average Effective)"), "平均實際時脈", "扣掉核心休息的時間，比較接近實際在跑的速度"),
               _reading(p.one("Clock", "Bus Speed"), "匯流排")]
     power = [_reading(p.one("Power", "Package", "CPU Package"), "整顆 CPU 功耗"),
-             _reading(p.one("Voltage", "Core (SVI2 TFN)"), "核心電壓", "CPU 回報給主機板供電的核心電壓"),
+             _reading(p.one("Power", "CPU Cores"), "核心功耗", "只算 CPU 核心，不含內顯與其他部分"),       # Intel
+             _reading(p.one("Voltage", "Core (SVI2 TFN)", "CPU Core"), "核心電壓", "CPU 回報給主機板供電的核心電壓"),
              _reading(p.one("Voltage", "SoC (SVI2 TFN)"), "SoC 電壓", "記憶體控制器、I/O 那一塊的電壓")]
     return [_section("規格", spec), _section("溫度", temps),
             _section("負載", loads, bars=bars if threads else None),

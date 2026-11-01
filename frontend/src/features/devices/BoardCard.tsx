@@ -14,7 +14,9 @@ export function BoardCard({ device, onOpen }: { device: Device; onOpen: (id: str
         <ul className="m-0 p-0 list-none">{device.temps.map((t) => <TempRow key={t.id} t={t} />)}</ul>
       ) : (
         <p className="m-0 text-sm text-fg-muted">
-          {device.kind === "board" ? "讀不到主機板的感測器（需要 PawnIO 驅動＋系統管理員）" : "沒有溫度感測器"}
+          {device.kind === "board"
+            ? "沒有讀到主機板的溫度：桌機要 PawnIO 驅動＋系統管理員；筆電通常沒有這種感測器"
+            : "沒有溫度感測器"}
         </p>
       )}
       {device.fans.length > 0 ? (

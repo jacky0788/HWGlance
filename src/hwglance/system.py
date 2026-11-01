@@ -267,13 +267,38 @@ def pawnio_version() -> str | None:
     return None
 
 
+WEBVIEW2_KEY = r"Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+PAWNIO_SITE = "https://pawnio.eu"         # 官方網站，下載鈕連到 GitHub namazso/PawnIO.Setup 的 PawnIO_setup.exe
+
+
+def webview2_version() -> str | None:
+    """Edge WebView2 Runtime 的版本（跟 pywebview 一樣看 EdgeUpdate 的登錄；這台在 WOW6432Node 底下）。沒裝回傳 None。
+    沒有的話 pywebview 會退回舊的 IE 引擎，介面會是一片空白，所以 core.Window 改用預設瀏覽器開。"""
+    if sys.platform != "win32":
+        return None
+    import winreg
+    for hive, path in ((winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\WOW6432Node\{WEBVIEW2_KEY}"),
+                       (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\{WEBVIEW2_KEY}"),
+                       (winreg.HKEY_CURRENT_USER, rf"SOFTWARE\{WEBVIEW2_KEY}")):
+        try:
+            with winreg.OpenKey(hive, path) as k:
+                value = str(winreg.QueryValueEx(k, "pv")[0] or "")
+        except OSError:
+            continue
+        if value and value != "0.0.0.0":
+            return value
+    return None
+
+
 def hints(kind: str, admin: bool, pawnio: str | None) -> list[str]:
-    """畫面上方要提醒的事：為什麼有些溫度讀不到。"""
+    """畫面上方要提醒的事：為什麼有些溫度讀不到、怎麼補（網址在畫面上是可以點的連結）。
+    別台第一次開最常碰到這兩個：沒按「是」給權限、沒裝 PawnIO。"""
     if kind == "demo":
         return ["示範資料：數字是模擬的，不是這台電腦的讀數"]
     out = []
     if not admin:
-        out.append("沒有以系統管理員執行：CPU、主機板、硬碟的溫度讀不到（用 run.bat 開會自動要權限）")
+        out.append("沒有以系統管理員執行：CPU、主機板、硬碟的溫度讀不到。重新開 HWGlance，跳出權限視窗時按「是」")
     if pawnio is None:
-        out.append("還沒安裝 PawnIO 驅動：CPU 與主機板的溫度讀不到")
+        out.append(f"還沒安裝 PawnIO 驅動：CPU 與主機板的溫度讀不到。到 {PAWNIO_SITE} 下載安裝（要系統管理員），"
+                   "裝好後重開 HWGlance")
     return out

@@ -1,6 +1,6 @@
 """LHM 的英文感測器名稱 → 畫面上的中文。對不到的照原文顯示，所以新硬體的感測器不會被漏掉。
 
-名稱照 LHM v0.9.6 原始碼：Amd17Cpu.cs、IntelCpu.cs、NvidiaGpu.cs、SuperIOHardware.cs、StorageDevice.cs。
+名稱照 LHM v0.9.6 原始碼：Amd17Cpu.cs、IntelCpu.cs、NvidiaGpu.cs、AmdGpu.cs、SuperIOHardware.cs、StorageDevice.cs。
 """
 from __future__ import annotations
 
@@ -18,10 +18,19 @@ _RULES: list[tuple[str, str, str]] = [
     ("Temperature", r"Core Max", "核心最高"),
     ("Temperature", r"Core Average", "核心平均"),
     ("Temperature", r"CPU Core #(\d+)", r"核心 \1"),
+    ("Temperature", r"P-Core #(\d+)", r"效能核 \1"),
+    ("Temperature", r"E-Core #(\d+)", r"節能核 \1"),
     ("Temperature", r"GPU Core", "核心"),
     ("Temperature", r"GPU Hot Spot", "熱點"),
     ("Temperature", r"GPU Memory Junction", "顯存接面"),
     ("Temperature", r"GPU Memory", "顯存"),
+    ("Temperature", r"GPU VR VDDC", "核心供電"),
+    ("Temperature", r"GPU VR MVDD", "顯存供電"),
+    ("Temperature", r"GPU VR SoC", "SoC 供電"),
+    ("Temperature", r"GPU Liquid", "水溫"),
+    ("Temperature", r"GPU PLX", "橋接晶片"),
+    ("Temperature", r"GPU Board", "顯示卡電路板"),
+    ("Temperature", r"GPU Power Supply", "顯示卡供電"),
     ("Temperature", r"Motherboard", "主機板"),
     ("Temperature", r"System", "系統"),
     ("Temperature", r"Chipset", "晶片組"),

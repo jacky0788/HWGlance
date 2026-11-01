@@ -55,6 +55,13 @@ LABELS: dict[str, str] = {
 }
 
 
+def cpu_band(tjmax: float | None) -> Band:
+    """CPU 的預設門檻。知道 TjMax（Intel，normalize.cpu_tjmax）就照它：差 15 度偏高、差 5 度過熱
+    （TjMax 100 → 85／95；Intel 桌機滿載本來就 90 以上，用 80／90 會一直亮紅燈）。
+    不知道（AMD，LHM 不給）就用上面的 80／90（照這台 Ryzen 5000 的 Tjmax 90°C 定的）。"""
+    return Band(tjmax - 15, tjmax - 5) if tjmax else DEFAULTS["cpu"]
+
+
 def level(value: float | None, band: Band) -> str:
     if value is None:
         return "none"

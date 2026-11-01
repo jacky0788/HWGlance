@@ -140,6 +140,17 @@ def test_unknown_mode_falls_back_to_main():
     assert desk.procs[0].mode == "main"
 
 
+def test_without_webview2_pages_open_in_the_browser():
+    exits: list[str] = []
+    opened: list[str] = []
+    w, desk = make(exits, webview=False, browser=opened.append)      # 沒有 WebView2：pywebview 會退回 IE，畫面空白
+    w.open("main")
+    w.open("mini")
+    w.close()
+    assert opened == ["http://127.0.0.1:8796/", "http://127.0.0.1:8796/?view=mini"]
+    assert desk.procs == [] and not w.alive() and exits == []
+
+
 class FakeUi:
     def __init__(self) -> None:
         self.port = 8796

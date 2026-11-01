@@ -5,16 +5,19 @@
   每張卡有 temps（全部溫度）、stats（負載、時脈、功耗…）、fans（有接的風扇）。
 - overview：總覽那一排磚塊，每個重要的溫度一塊（「一眼看出所有硬體的溫度」就靠這一排）。
 
-感測器名稱照 LHM v0.9.6 原始碼（Amd17Cpu.cs、NvidiaGpu.cs、SuperIOHardware.cs、StorageDevice.cs、TotalMemory.cs）。
+感測器名稱照 LHM v0.9.6 原始碼（Amd17Cpu.cs、IntelCpu.cs、GenericCpu.cs、NvidiaGpu.cs、AmdGpu.cs、IntelIntegratedGpu.cs、
+SuperIOHardware.cs、StorageDevice.cs、TotalMemory.cs）。這台是 AMD＋NVIDIA；Intel、AMD 顯示卡、內顯的部分照原始碼寫、
+用假的樹測（tests/test_normalize.py），示範資料另有一台 Intel 筆電（--demo-profile intel-laptop）。
 """
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 
 from .labels import label
 from .model import RawHardware, RawSensor
-from .thresholds import DEFAULTS, Band, level
+from .thresholds import DEFAULTS, Band, cpu_band, level
 
 KIND_BY_TYPE = {
     "Cpu": "cpu",
@@ -36,6 +39,10 @@ VALID_TEMP = (-40.0, 125.0)
 STORAGE_LIMITS = frozenset({"Warning Temperature", "Critical Temperature"})
 
 CPU_HEADLINE = ("Core (Tctl/Tdie)", "Core (Tdie)", "Core (Tctl)", "CPU Package", "Core Max", "Core Average")
+# Intel 每個核心一個：CPU Core #1，混合架構是 P-Core #1（效能核）、E-Core #1（節能核）
+PER_CORE = re.compile(r"(?:CPU |[PE]-)?Core #\d+")
+# Intel 每個核心「離 TjMax（降頻溫度）還差幾度」：LHM 把它當溫度給，但它不是溫度
+DISTANCE = " Distance to TjMax"
 GPU_TILES = (("GPU Core", "GPU 核心"), ("GPU Hot Spot", "GPU 熱點"))
 # 主機板上哪些溫度放進總覽：(LHM 名稱, 磚塊標題)；同一個標題只放一次
 BOARD_TILES = (("Motherboard", "主機板"), ("System", "主機板"), ("Chipset", "晶片組"), ("PCH", "晶片組"),
@@ -83,8 +90,9 @@ def short_drive(model: str) -> str:
 
 
 def clean_cpu(name: str) -> str:
-    """AMD Ryzen 7 5800X 8-Core Processor → AMD Ryzen 7 5800X。"""
+    """AMD Ryzen 7 5800X 8-Core Processor → AMD Ryzen 7 5800X；12th Gen Intel(R) Core(TM) i7-12700H → Intel Core i7-12700H。"""
     name = re.sub(r"\(R\)|\(TM\)", "", name)
+    name = re.sub(r"^\d+(?:st|nd|rd|th) Gen\s+", "", name.strip())
     name = re.sub(r"\s+\d+-Core Processor$|\s+Processor$|\s+CPU @.*$", "", name)
     return re.sub(r"\s{2,}", " ", name).strip()
 
@@ -177,12 +185,27 @@ class _Device:
         return self.data
 
 
+def cpu_tjmax(hw: RawHardware) -> float | None:
+    """Intel 的 TjMax（降頻溫度）＝核心溫度＋「離 TjMax 還差幾度」（LHM 從 MSR 讀了 TjMax 但不直接給）。
+    每個核心應該一樣，取最多核心算出來的那個；AMD 沒有這個感測器就 None。"""
+    temps = {s.name: s.value for s in _of(hw, "Temperature")}
+    found = [round(temps[core] + s.value) for s in _of(hw, "Temperature")
+             if s.name.endswith(DISTANCE) and s.value is not None
+             and temps.get(core := s.name[: -len(DISTANCE)]) is not None]
+    return float(Counter(found).most_common(1)[0][0]) if found else None
+
+
 def _cpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
+    tjmax = cpu_tjmax(hw)
+    if tjmax is not None and bands.get("cpu") == DEFAULTS["cpu"]:
+        # 使用者沒改過 CPU 門檻（設定只存改過的）：Intel 照它自己的 TjMax（TjMax 100 → 85／95）
+        bands = {**bands, "cpu": cpu_band(tjmax)}
     dev = _Device(hw, "cpu", bands, name=clean_cpu(hw.name))
-    sensors = _of(hw, "Temperature")
+    sensors = [s for s in _of(hw, "Temperature") if not s.name.endswith(DISTANCE)]
     if any(s.name in CPU_HEADLINE and valid_temp(s) for s in sensors):
-        # AMD 的 CCD 溫度是瞬間值，真機每秒在 48～78°C 之間跳（2026-10-31）；有平滑過的 Tctl/Tdie 就不列
-        sensors = [s for s in sensors if not s.name.startswith("CCD")]
+        # AMD 的 CCD 溫度是瞬間值，真機每秒在 48～78°C 之間跳（2026-10-31）；有平滑過的 Tctl/Tdie 就不列。
+        # Intel 每個核心一個溫度（24 核就 24 個），有封裝／核心最高就不列（詳細資訊裡還看得到）
+        sensors = [s for s in sensors if not s.name.startswith("CCD") and not PER_CORE.fullmatch(s.name)]
     temps = {s.name: t for s in sensors if (t := dev.temp(s, "cpu"))}
     head = next((temps[n] for n in CPU_HEADLINE if n in temps), None)
     if head is not None:
@@ -192,7 +215,7 @@ def _cpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     dev.stat("load", "負載", load and load.value, "%")
     clock = _find(hw, "Clock", "Cores (Average)")
     if clock is None:
-        cores = [s.value for s in _of(hw, "Clock") if re.fullmatch(r"(CPU )?Core #\d+", s.name) and s.value]
+        cores = [s.value for s in _of(hw, "Clock") if PER_CORE.fullmatch(s.name) and s.value]
         clock_value = max(cores) if cores else None
     else:
         clock_value = clock.value
@@ -202,17 +225,32 @@ def _cpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     return dev
 
 
+def _gpu_role(name: str) -> str:
+    if name == "GPU Hot Spot":
+        return "gpu_hotspot"
+    if name.startswith("GPU Memory"):
+        return "gpu_memory"
+    if name.startswith("GPU VR"):                     # AMD：核心、顯存、SoC 的供電（VRM）
+        return "vrm"
+    if name == "GPU Liquid":                          # AMD 水冷卡的水溫
+        return "liquid"
+    if name == "GPU PLX":                             # AMD 雙晶片卡的橋接晶片
+        return "other"
+    return "gpu"
+
+
 def _gpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     dev = _Device(hw, "gpu", bands, sub=short_gpu(hw.name))
     temps: dict[str, dict] = {}
     for s in _of(hw, "Temperature"):
-        role = "gpu_hotspot" if s.name == "GPU Hot Spot" else "gpu_memory" if s.name.startswith("GPU Memory") else "gpu"
-        if t := dev.temp(s, role):
+        if t := dev.temp(s, _gpu_role(s.name)):
             temps.setdefault(s.name, t)
     for name, title in GPU_TILES:
         dev.tile(temps.get(name), title, dev.data["sub"])
     dev.headline(temps.get("GPU Core"))
-    load = _find(hw, "Load", "GPU Core")
+    # Intel 內顯沒有「GPU Core」負載，用 D3D 的 3D 引擎（工作管理員看的也是這個）
+    load = _find(hw, "Load", "GPU Core") or next(
+        (s for s in _of(hw, "Load") if s.name.endswith("3D") and s.value is not None), None)
     dev.stat("load", "負載", load and load.value, "%")
     clock = _find(hw, "Clock", "GPU Core")
     dev.stat("clock", "時脈", clock and clock.value, "MHz")

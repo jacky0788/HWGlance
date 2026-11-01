@@ -77,6 +77,24 @@ export function TopBar({ snap, page, badge, onMini, onSettings }: {
   );
 }
 
+// 提醒裡的網址（例如 PawnIO 的下載網站）變成連結：桌面視窗裡點了用系統的瀏覽器開（pywebview 預設）
+const URL_PATTERN = /(https?:\/\/[^\s，。、）]+)/;
+
+function Linked({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(URL_PATTERN).map((part, i) =>
+        i % 2 === 1 ? (
+          <a key={i} href={part} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">
+            {part}
+          </a>
+        ) : (
+          part
+        ))}
+    </>
+  );
+}
+
 export function Notes({ notes, offline }: { notes: string[]; offline: string | null }) {
   if (!offline && notes.length === 0) return null;
   return (
@@ -92,7 +110,7 @@ export function Notes({ notes, offline }: { notes: string[]; offline: string | n
           {notes.map((n) => (
             <li key={n} className="flex items-start gap-2">
               <TriangleAlert className="size-4 mt-0.5 shrink-0 text-(--level)" aria-hidden />
-              {n}
+              <span className="min-w-0 break-words"><Linked text={n} /></span>
             </li>
           ))}
         </ul>

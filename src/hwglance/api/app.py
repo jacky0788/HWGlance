@@ -31,7 +31,7 @@ from .. import APP_NAME, __version__, paths
 from ..events.service import EventService
 from ..sensors.blackbox import BlackBox, DemoBlackBox
 from ..sensors.service import SensorService
-from ..sensors.thresholds import DEFAULTS, LABELS
+from ..sensors.thresholds import DEFAULTS, LABELS, cpu_band
 from ..settings import BAND_RANGE, INTERVALS, Settings, SettingsStore
 from . import security
 
@@ -53,14 +53,21 @@ class SettingsBody(BaseModel):
     bands: dict[str, tuple[float, float]]
 
 
-def settings_payload(s: Settings) -> dict:
+def settings_payload(s: Settings, tjmax: float | None = None) -> dict:
+    """tjmax：這台 CPU 的 TjMax（Intel 才知道）。CPU 門檻沒改過時，畫面上用的是照它算的（normalize._cpu），
+    設定頁也顯示同一組，「恢復預設」也回到這一組。"""
+    defaults = {**DEFAULTS, "cpu": cpu_band(tjmax)}
+    bands = s.merged_bands()
+    if "cpu" not in s.bands:
+        bands["cpu"] = defaults["cpu"]
+    labels = {**LABELS, "cpu": f"CPU（TjMax {tjmax:g}°C）"} if tjmax else LABELS
     return {
         "unit": s.unit,
         "interval": s.interval,
         "closeToTray": s.close_to_tray,
-        "bands": {k: [b.warm, b.hot] for k, b in s.merged_bands().items()},
-        "defaults": {k: [b.warm, b.hot] for k, b in DEFAULTS.items()},
-        "labels": LABELS,
+        "bands": {k: [b.warm, b.hot] for k, b in bands.items()},
+        "defaults": {k: [b.warm, b.hot] for k, b in defaults.items()},
+        "labels": labels,
         "intervals": list(INTERVALS),
         "range": list(BAND_RANGE),
     }
@@ -120,16 +127,19 @@ def create_app(service: SensorService, token: str | None = None,
 
     @app.get("/api/settings")
     def get_settings() -> JSONResponse:
-        return JSONResponse(settings_payload(store.get()), headers=NO_STORE)
+        return JSONResponse(settings_payload(store.get(), service.cpu_tjmax()), headers=NO_STORE)
 
     @app.put("/api/settings")
     def put_settings(body: SettingsBody) -> JSONResponse:
+        tjmax = service.cpu_tjmax()
+        bands = {k: (float(w), float(h)) for k, (w, h) in body.bands.items()}
+        if tjmax and bands.get("cpu") == (cpu_band(tjmax).warm, cpu_band(tjmax).hot):
+            bands.pop("cpu")                         # 跟這台照 TjMax 算的預設一樣：當成沒改，換 CPU 也會跟著變
         try:
-            saved = store.update(unit=body.unit, interval=body.interval, close_to_tray=body.closeToTray,
-                                 bands={k: (float(w), float(h)) for k, (w, h) in body.bands.items()})
+            saved = store.update(unit=body.unit, interval=body.interval, close_to_tray=body.closeToTray, bands=bands)
         except ValueError as e:
             return JSONResponse({"detail": str(e)}, status_code=400)
-        return JSONResponse(settings_payload(saved), headers=NO_STORE)
+        return JSONResponse(settings_payload(saved, tjmax), headers=NO_STORE)
 
     @app.post("/api/ui/open")
     def ui_open(body: OpenRequest) -> dict:

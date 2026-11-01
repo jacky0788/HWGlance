@@ -16,10 +16,11 @@ import sys
 import threading
 import time
 import traceback
+import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 
-from . import APP_NAME, instance, paths
+from . import APP_NAME, instance, paths, system
 from .api.app import create_app
 from .events.service import EventService
 from .logs import streams_to_log
@@ -33,6 +34,8 @@ CREATE_NO_WINDOW = 0x08000000
 WM_CLOSE = 0x0010
 TRAY_HINT = ("關掉視窗後，HWGlance 會在這裡繼續監控，圖示上的數字就是 CPU 溫度。右鍵圖示可以結束。",
              "HWGlance 還在系統匣")
+NO_WEBVIEW_HINT = ("這台沒有 Microsoft Edge WebView2 Runtime，畫面改用瀏覽器開。裝好 WebView2 後重開 HWGlance 就是獨立視窗。",
+                   "HWGlance 用瀏覽器開")
 
 
 class Server:
@@ -116,6 +119,7 @@ class Window:
     open(模式)：已經開著那一種就叫到前面；開著另一種就叫視窗程序自己切換（不重開程序，切換是瞬間的，
     也不用重新初始化 WebView2）；沒開就開。視窗程序用長輪詢 GET /api/ui/commands 拿指令（ui.py 的 poll_commands）。
     子程序自己結束（使用者關掉視窗）時呼叫 on_exit；是我們叫它結束的就不叫。
+    webview=False（這台沒有 WebView2 Runtime）：不開視窗程序，改用預設瀏覽器開同一個網址。
     """
 
     def __init__(self, port: int, on_exit: Callable[[], None] | None = None, *, token: str = "",
@@ -123,10 +127,13 @@ class Window:
                  find: Callable[[str], int] = find_window,
                  front: Callable[[int], None] = bring_to_front,
                  close: Callable[[int], None] = post_close,
+                 webview: bool = True, browser: Callable[[str], object] = webbrowser.open,
                  quit_timeout: float = 4.0, respawn_gap: float = 2.0) -> None:
         self.port = port
         self.token = token
         self.on_exit = on_exit
+        self.webview = webview
+        self._browser = browser
         self._spawn = spawn or self._spawn_process
         self._find, self._front, self._close = find, front, close
         self._quit_timeout = quit_timeout
@@ -141,6 +148,9 @@ class Window:
 
     def open(self, mode: str = "main") -> None:
         mode = mode if mode in TITLES else "main"
+        if not self.webview:                          # 迷你視窗在瀏覽器裡就是 ?view=mini 那一頁
+            self._browser(f"http://127.0.0.1:{self.port}/" + ("?view=mini" if mode == "mini" else ""))
+            return
         with self._lock:
             if self.alive():
                 hwnd = self._find(TITLES[mode])
@@ -221,15 +231,16 @@ def start_tray(open_ui: Callable[[str], None], quit_app: Callable[[], None]):
 
 
 def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
-        mode: str = "main", hidden: bool = False, demo_gpu_reset: float | None = None) -> int:
+        mode: str = "main", hidden: bool = False, demo_gpu_reset: float | None = None,
+        demo_profile: str = "this-pc") -> int:
     streams_to_log("hwglance")
     store = SettingsStore()
     watch = None
     recorder: BlackBox | None = None
     if demo:
         from .events.demo import DemoEventLog
-        from .sensors.demo import DemoSource
-        source, event_log = DemoSource(gpu_reset_at=demo_gpu_reset), DemoEventLog()
+        from .sensors.demo import PROFILES
+        source, event_log = PROFILES[demo_profile](gpu_reset_at=demo_gpu_reset), DemoEventLog()
         box: BlackBox | DemoBlackBox = DemoBlackBox(event_log.downs)     # 示範：算出來的，不寫檔
     else:
         from .events.reader import WindowsEventLog
@@ -254,8 +265,13 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     port = pick_port(port)
     token = secrets.token_urlsafe(24)
     quit_event = threading.Event()
-    window = None if serve_only else Window(port, token=token)
+    webview = serve_only or system.webview2_version() is not None
+    if not webview:
+        print(NO_WEBVIEW_HINT[0], flush=True)
+    window = None if serve_only else Window(port, token=token, webview=webview)
     tray = None if serve_only else start_tray(window.open, quit_event.set)
+    if tray is not None and not webview:
+        tray.notify(*NO_WEBVIEW_HINT)
     if tray is not None:
         service.subscribe(tray.update)
 

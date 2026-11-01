@@ -18,7 +18,7 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | 位置 | 放什麼 |
 |---|---|
 | `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL（CLR 啟動前設 `CSE_POLICY`，存取違規才接得到）、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware`；某一類讀失敗交給 `guard.py` 停讀、到時候 `Is*Enabled` 關掉重開；`specs()` 讀規格（SMBIOS＋WMI 的硬碟與顯示卡驅動） |
-| `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣 |
+| `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣；`IntelLaptopDemo`（`--demo-profile intel-laptop`）是另一種電腦：Intel 12 代筆電（效能核／節能核、內顯＋筆電獨顯、電池、主機板沒有感測器），名稱照 LHM 原始碼 |
 | `src/hwglance/sensors/model.py` | `RawHardware`／`RawSensor`（LHM 與示範資料共用的形狀） |
 | `src/hwglance/sensors/normalize.py` | 整理：分類、總覽磚塊、主溫度、負載／時脈／功耗、風扇。純函式，`tests/test_normalize.py` 用假樹測 |
 | `src/hwglance/sensors/details.py` | 點硬體跳出的詳細資訊：規格＋所有讀數分段（規格、溫度、負載…），中文名稱、單位、一句說明；挑剩的放「其他讀數」。純函式，`tests/test_details.py` 用示範資料測 |
@@ -33,9 +33,10 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/ui.py` | 視窗程序（pywebview）：主畫面／迷你視窗（`UiApp.switch`）、網頁按鈕的 `Bridge`、長輪詢本體指令（`poll_commands`）、迷你位置記在 `data/ui-state.json` |
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
-| `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
+| `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、WebView2 版本（沒有就用瀏覽器開）、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
 | `src/hwglance/events/` | 事件記錄（SPEC D24）：`reader.py` 讀 Windows 事件記錄（wevtapi，ctypes，唯讀）、`catalog.py` 要讀哪些事件（`WATCHED`）與每種的中文說明、藍屏代碼、建議、`incidents.py` 歸成一件件事（純函式）、`demo.py` 照這台 6～10 月的真實記錄、`service.py` 60 秒快取、`watch.py` 訂閱顯示卡驅動的新錯誤（一報錯就先停讀顯示卡，`core.py` 接到 `guard`）；`tests/test_events.py` |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
+| `scripts/build_portable.py` | 產生可攜版 `build/HWGlance-版本-portable-win64.zip`（SPEC D27）：python.org 嵌入版 Python（跟 venv 同版、比對 SHA-256，`EMBED` 表）＋執行用套件（版本照 venv）＋src、vendor/lhm、frontend/dist、`HWGlance.bat`、`probe.bat`、使用說明與第三方授權；`--no-zip` 只產生資料夾。`build/` 不進 git |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
 | ProjectHub 的 `registry/hwglance/project.toml` | 登錄到 ProjectHub（只有「啟動」一個按鈕）；要改照 ProjectHub 的 `docs/SOP-edit-project.md` |
@@ -75,6 +76,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | 看這台讀得到哪些感測器 | 使用者雙擊 `probe.bat`（跳 UAC）→ 結果在 `data/probe/probe-日期-時間.txt`，agent 讀這個檔 |
 | 改介面時預覽 | `F:\Desktop\claude_project\.claude\launch.json` 的 `hwglance-demo`（埠 8797，示範資料，設定存在 `data/demo`）；迷你畫面開 `/?view=mini` |
 | 看顯示卡重設時的畫面 | launch.json 的 `hwglance-demo-gpu-reset`（埠 8798，`--demo-gpu-reset 15`：開啟 15 秒後模擬一次，約 1 分鐘後重新連上） |
+| 看別種電腦的畫面 | launch.json 的 `hwglance-demo-intel`（埠 8799，`--demo-profile intel-laptop`） |
+| 給另一台電腦 | `.venv\Scripts\python.exe scripts\build_portable.py` → `build\` 裡的 zip；改了程式或介面要重新產生（介面先 `npm run build`） |
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
 | 叫出迷你視窗／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden` |
 
@@ -105,6 +108,17 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 - .NET 4 起原生程式碼裡的存取違規（Corrupted State Exception）一般的 catch 接不到，程式直接結束（10/31 顯示卡重設時本體就這樣沒了）。
   CLR 啟動前設 `COMPlus_legacyCorruptedStateExceptionsPolicy=1` 就接得到，啟動後拿掉也照樣有效（2026-11-01 用暫存程序驗證，
   P/Invoke 進原生 DLL 的存取違規 200 次都傳回 Python）。要驗證這類事不要故意讓程式當掉：會在事件記錄留下一筆假當機。
+- 可攜版（2026-11-01 驗證）：嵌入版 Python 的 `python314._pth` 列 `python314.zip`、`.`、`Lib\site-packages`、`..\src`，
+  **不寫 `import site`**（寫了會把那台使用者的 `AppData\Roaming\Python` 套件也加進來）；pythonnet 在嵌入版照樣載得起來
+  （用的就是同一層的 python314.dll）。`proxy_tools`（pywebview 要的）只有原始碼包，pip 要用 `--prefer-binary` 不能 `--only-binary`。
+  解壓到暫存資料夾驗過：伺服器、事件記錄、黑盒子、桌面視窗（WebView2）、用 API 結束後程序收乾淨。
+- 沒有 WebView2 Runtime 時 pywebview 會退回 IE 引擎（MSHTML），React 介面一片空白；`system.webview2_version()` 看 EdgeUpdate 的登錄
+  （這台在 `HKLM\SOFTWARE\WOW6432Node\…\{F3017226-…}` 的 `pv`），沒有就 `core.Window` 改用預設瀏覽器開。
+  pywebview 預設 `OPEN_EXTERNAL_LINKS_IN_BROWSER`：`target="_blank"` 的連結用系統瀏覽器開。
+- 別種硬體（照 LHM v0.9.6 原始碼）：Intel 每個核心有「`<核心> Distance to TjMax`」，類型是 Temperature 但不是溫度（不能當溫度顯示），
+  TjMax＝核心溫度＋它；混合架構核心叫 `P-Core #n`／`E-Core #n`（效能核 1 和節能核 1 是不同核心）；負載的執行緒名稱還是 `CPU Core #n Thread #m`。
+  AMD 顯示卡的整張卡功耗是 `GPU Package`，還有 `GPU VR *`（供電）、`GPU Liquid`、`GPU PLX` 溫度；Intel 內顯沒有溫度、負載用 `D3D 3D`。
+  LHM 讀 NVIDIA 時不管顯示卡是不是在休眠，筆電獨顯可能因此一直醒著（使用說明有寫）。
 - EvtSubscribe 訂閱系統記錄（拉的：Windows 設 event、EvtNext 拿）一般權限就能用；驗證時把 `events/watch.py` 的
   `SUBSCRIBE_FLAGS` 換成 2（從最舊的開始），就能拿現有的記錄重播，不用寫假事件。
 - Python 3.14.3、pythonnet 3.2.1、pywebview 6.2.1、FastAPI 0.162；前端 React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3。

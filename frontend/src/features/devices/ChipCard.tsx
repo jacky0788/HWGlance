@@ -26,7 +26,11 @@ export function ChipCard({ device, series, onOpen }: { device: Device; series: S
         </div>
       ) : (
         <p className="mt-3 mb-0 text-xs text-fg-subtle">
-          讀不到溫度：{isCpu ? "需要 PawnIO 驅動＋系統管理員" : "顯示卡驅動沒有回報"}
+          {isCpu
+            ? "讀不到溫度：需要 PawnIO 驅動＋系統管理員"
+            : device.id.includes("integrated")
+              ? "內顯沒有自己的溫度：它跟 CPU 在同一顆晶片上，看 CPU 溫度就好"
+              : "讀不到溫度：顯示卡驅動沒有回報"}
         </p>
       )}
     </Card>

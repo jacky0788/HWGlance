@@ -325,3 +325,101 @@ class DemoSource:
                             s(hid, "Level", 102, "Percentage Used", worn)]
             out.append(RawHardware(hid, model, "Storage", sensors))
         return out
+
+
+class IntelLaptopDemo(DemoSource):
+    """另一種電腦的示範（--demo-profile intel-laptop）：看這台以外的硬體在畫面上長怎樣，不碰硬體。
+    12 代 Intel 筆電：6 個效能核（2 執行緒）＋8 個節能核、Intel 內顯＋筆電版 RTX 4060（沒有風扇讀數）、一顆 NVMe、
+    電池（不顯示）；主機板沒有感測器（筆電常見）。感測器名稱照 LHM v0.9.6 原始碼（IntelCpu.cs、GenericCpu.cs、
+    IntelIntegratedGpu.cs、NvidiaGpu.cs），Intel 每個核心有「離 TjMax 還差幾度」（TjMax 100）。型號是常見的，不是誰的電腦。"""
+
+    P_CORES, E_CORES, TJMAX = 6, 8, 100.0
+
+    def read(self) -> list[RawHardware]:
+        s = self._sensor
+        return [RawHardware("/motherboard", "LENOVO LNVNB161216", "Motherboard"), self._intel_cpu(),
+                self._laptop_memory(), self._intel_gpu(), self._laptop_gpu(), self._laptop_drive(),
+                RawHardware("/battery/0", "Primary Battery", "Battery", [s("/battery/0", "Level", 0, "Charge Level", 76.0)])]
+
+    def specs(self) -> dict:
+        return {"cpu": {"socket": "BGA1744", "cores": self.P_CORES + self.E_CORES, "threads": 2 * self.P_CORES + self.E_CORES,
+                        "maxMHz": 4700}, "caches": {1: 1248 * 1024, 2: 11776 * 1024, 3: 24 * 2**20}}
+
+    def gpu_processes(self) -> list[dict]:
+        return []
+
+    def _intel_cpu(self) -> RawHardware:
+        v, hid, s = self._v, "/intelcpu/0", self._sensor
+        load = v["cpu_load"]
+        package = 42 + (v["cpu"] - 48) * 50 / 38              # 筆電滿載常到 90°C 以上（TjMax 100）
+        names = [f"P-Core #{i + 1}" for i in range(self.P_CORES)] + [f"E-Core #{i + 1}" for i in range(self.E_CORES)]
+        sensors = []
+        for i, name in enumerate(names):
+            temp = package - (1.5 if name[0] == "P" else 6.0) - self._rng.uniform(0, 3)
+            clock = (3000 + 1700 * load if name[0] == "P" else 2400 + 1100 * load) + self._noise(40)
+            sensors += [s(hid, "Temperature", i, name, temp),
+                        s(hid, "Temperature", 30 + i, f"{name} Distance to TjMax", self.TJMAX - temp),
+                        s(hid, "Clock", 1 + i, name, clock),
+                        s(hid, "Voltage", 1 + i, name, 0.75 + 0.45 * load)]
+        threads = [f"CPU Core #{c + 1} Thread #{t + 1}" for c in range(self.P_CORES) for t in range(2)]
+        threads += [f"CPU Core #{self.P_CORES + c + 1}" for c in range(self.E_CORES)]
+        sensors += [s(hid, "Load", 2 + i, name, min(100.0, max(0.0, 100 * load + self._noise(15))))
+                    for i, name in enumerate(threads)]
+        sensors += [
+            s(hid, "Temperature", 14, "Core Max", package - 1),
+            s(hid, "Temperature", 15, "Core Average", package - 5),
+            s(hid, "Temperature", 16, "CPU Package", package),
+            s(hid, "Load", 0, "CPU Total", 100 * load),
+            s(hid, "Load", 1, "CPU Core Max", min(100.0, 100 * load + 8)),
+            s(hid, "Clock", 0, "Bus Speed", 100.0),
+            s(hid, "Power", 0, "CPU Package", 8 + 37 * math.sqrt(load) + self._noise(1)),
+            s(hid, "Power", 1, "CPU Cores", 4 + 30 * math.sqrt(load)),
+            s(hid, "Voltage", 0, "CPU Core", 0.75 + 0.45 * load),
+        ]
+        return RawHardware(hid, "12th Gen Intel(R) Core(TM) i7-12700H", "Cpu", sensors)
+
+    def _intel_gpu(self) -> RawHardware:
+        hid, s = "/gpu-intel-integrated/0", self._sensor
+        load = self._v["cpu_load"] * 0.3
+        return RawHardware(hid, "Intel(R) Iris(R) Xe Graphics", "GpuIntel", [
+            s(hid, "Power", 0, "GPU Power", 0.5 + 6 * load),
+            s(hid, "Load", 0, "D3D 3D", 100 * load),
+            s(hid, "Load", 1, "D3D Copy", 2.0),
+            s(hid, "Load", 2, "D3D Video Decode", 0.0),
+            s(hid, "SmallData", 0, "D3D Shared Memory Used", 650 + 400 * load),
+        ])
+
+    def _laptop_gpu(self) -> RawHardware:
+        v, hid, s = self._v, "/gpu-nvidia/0", self._sensor
+        load, used = v["gpu_load"], 1200 + 5000 * v["gpu_load"]
+        return RawHardware(hid, "NVIDIA GeForce RTX 4060 Laptop GPU", "GpuNvidia", [
+            s(hid, "Temperature", 0, "GPU Core", 44 + (v["gpu"] - 48) * 1.2),
+            s(hid, "Clock", 0, "GPU Core", 210 + 2100 * load),
+            s(hid, "Clock", 4, "GPU Memory", 8001.0),
+            s(hid, "Load", 0, "GPU Core", 100 * load),
+            s(hid, "Power", 0, "GPU Package", 5 + 105 * load),
+            s(hid, "SmallData", 1, "GPU Memory Used", used),
+            s(hid, "SmallData", 2, "GPU Memory Total", 8188.0),
+        ])
+
+    def _laptop_memory(self) -> RawHardware:
+        s, used = self._sensor, 9.5 + 3.0 * self._v["cpu_load"]
+        return RawHardware("/ram", "Total Memory", "Memory", [
+            s("/ram", "Data", 0, "Memory Used", used),
+            s("/ram", "Data", 1, "Memory Available", 15.7 - used),
+            s("/ram", "Load", 0, "Memory", 100 * used / 15.7),
+        ])
+
+    def _laptop_drive(self) -> RawHardware:
+        hid, s = "/nvme/0", self._sensor
+        return RawHardware(hid, "SAMSUNG MZVL21T0HCLR-00BL2", "Storage", [
+            s(hid, "Temperature", 0, "Composite Temperature", 38 + 12 * self._v["cpu_load"]),
+            s(hid, "Temperature", 10, "Warning Temperature", 82.0),
+            s(hid, "Temperature", 11, "Critical Temperature", 85.0),
+            s(hid, "Load", 30, "Used Space", 61.0),
+            s(hid, "Data", 31, "Free Space", 372.0),
+            s(hid, "Data", 32, "Total Space", 953.9),
+        ])
+
+
+PROFILES = {"this-pc": DemoSource, "intel-laptop": IntelLaptopDemo}

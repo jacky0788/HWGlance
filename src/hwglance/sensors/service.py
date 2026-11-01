@@ -16,7 +16,7 @@ from .. import system
 from .details import device_details
 from .history import History
 from .model import RawHardware
-from .normalize import history_values, normalize
+from .normalize import cpu_tjmax, history_values, normalize
 from .thresholds import Band
 
 
@@ -85,6 +85,12 @@ class SensorService:
         kind = next((d["kind"] for d in snap["devices"] if d["id"] == device_id), None)
         procs = self.gpu_processes() if kind == "gpu" else None
         return device_details(tree, snap, device_id, specs, procs)
+
+    def cpu_tjmax(self) -> float | None:
+        """這台 CPU 的 TjMax（Intel 才有，normalize.cpu_tjmax）；設定頁的 CPU 預設門檻照它算。"""
+        with self._lock:
+            tree = self._raw
+        return next((t for hw in tree if hw.type == "Cpu" and (t := cpu_tjmax(hw)) is not None), None)
 
     def disk_models(self) -> dict[str, str]:
         """{磁碟編號: 型號}（開啟後讀的規格）；事件記錄拿來把「硬碟 3」寫成型號。規格還沒讀到就是空的。"""
