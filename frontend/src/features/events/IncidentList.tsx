@@ -1,10 +1,11 @@
 // 事件清單：新的在前，一件事一列（標題、標籤、時間、先後經過）；點開看每一筆記錄（再點看 Windows 的原文）、
-// 這是什麼、可以怎麼做。看「全部」時，連續的零星事件（零星的顯示卡錯誤、單獨的程式當掉）收成一行，
+// 出事前後的讀數（黑盒子，BlackBox.tsx）、這是什麼、可以怎麼做。看「全部」時，連續的零星事件（零星的顯示卡錯誤、單獨的程式當掉）收成一行，
 // 要注意的事才不會被洗掉；選了某一類就全部列出來。
 import { ChevronRight, CircleCheck } from "lucide-react";
 import { useState } from "react";
 import { day, daySpan, gap, hm, hms, number, span, when } from "../../lib/format";
 import type { EventCategory, EventLine, EventMarker, Incident } from "../../types";
+import { BlackBox } from "./BlackBox";
 import { iconOf, levelClass } from "./meta";
 
 const LOGS: Record<string, string> = { System: "系統記錄", Application: "應用程式記錄" };
@@ -100,6 +101,7 @@ function IncidentBody({ incident: i, markers, now }: { incident: Incident; marke
           </p>
         ) : null}
       </section>
+      <BlackBox incident={i} now={now} />
       {i.explain.length > 0 ? (
         <section>
           <h4 className="m-0 mb-1 text-xs font-semibold text-fg-muted">這是什麼</h4>

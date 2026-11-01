@@ -23,6 +23,7 @@ from . import APP_NAME, instance, paths
 from .api.app import create_app
 from .events.service import EventService
 from .logs import streams_to_log
+from .sensors.blackbox import BlackBox, DemoBlackBox
 from .sensors.service import SensorService
 from .settings import Settings, SettingsStore
 from .ui import TITLES
@@ -224,10 +225,12 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     streams_to_log("hwglance")
     store = SettingsStore()
     watch = None
+    recorder: BlackBox | None = None
     if demo:
         from .events.demo import DemoEventLog
         from .sensors.demo import DemoSource
         source, event_log = DemoSource(gpu_reset_at=demo_gpu_reset), DemoEventLog()
+        box: BlackBox | DemoBlackBox = DemoBlackBox(event_log.downs)     # 示範：算出來的，不寫檔
     else:
         from .events.reader import WindowsEventLog
         from .events.watch import DriverWatch
@@ -236,10 +239,14 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         source, event_log = lhm, WindowsEventLog()
         # 顯示卡驅動一報錯就先停讀顯示卡，不等到整張卡重設才碰上（sensors/guard.py）
         watch = DriverWatch(lambda what: lhm.guard.trip("gpu", f"驅動回報 {what}"))
+        box = recorder = BlackBox(paths.data_dir() / "blackbox")
     service = SensorService(source)
     events = EventService(event_log, service.disk_models)
     apply_settings(service, store.get())
     store.subscribe(lambda s: apply_settings(service, s))
+    if recorder is not None:
+        service.subscribe(recorder.record)
+        recorder.start()
     service.start()
     if watch is not None:
         watch.start()
@@ -264,12 +271,14 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         window.on_exit = window_closed
     server = Server(create_app(service, token, open_ui=window.open if window else None,
                                ui_commands=window.next_commands if window else None,
-                               settings=store, on_quit=quit_event.set, events=events), port)
+                               settings=store, on_quit=quit_event.set, events=events, blackbox=box), port)
     server.start()
     if not server.wait_ready():
         service.stop()
         if watch is not None:
             watch.stop()
+        if recorder is not None:
+            recorder.stop()
         if tray is not None:
             tray.stop()
         print("伺服器啟動失敗，看 data/logs/hwglance.log", file=sys.stderr)
@@ -295,4 +304,6 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         if watch is not None:
             watch.stop()
         service.stop()
+        if recorder is not None:
+            recorder.stop()                           # 讀數停了之後：剩下的寫完、存好
     return 0

@@ -193,6 +193,32 @@ export interface EventMarker {
   text: string;
 }
 
+// /api/blackbox?start=&end=（後端 src/hwglance/sensors/blackbox.py）：那段時間每 2 秒的主要讀數，欄位改了兩邊一起改
+export interface BlackBoxKey {
+  key: string; // 跟 /api/history 的鍵一樣：溫度的 id，或「硬體 id#load／#power」
+  label: string; // CPU、GPU 核心、GPU 功耗…
+  unit: string; // °C、%、W
+  kind: Kind;
+  role: string; // 溫度的門檻種類（cpu、gpu、nvme…），或 load、power
+  device: string;
+  max: number | null;
+  level?: Level; // 溫度才有：最高溫照門檻的等級
+}
+
+export interface BlackBoxWindow {
+  from: number;
+  to: number;
+  first: number | null; // 範圍內第一筆、最後一筆紀錄的時間
+  last: number | null;
+  count: number;
+  step: number; // 每一點相隔幾秒（太多筆就分段取最大值）
+  keepDays: number;
+  gaps: [number, number][]; // 中間沒有紀錄的時段 [最後一筆, 下一筆]
+  t: number[];
+  keys: BlackBoxKey[];
+  series: Record<string, (number | null)[]>;
+}
+
 export interface EventReport {
   source: "windows" | "demo";
   days: number | null; // null＝全部

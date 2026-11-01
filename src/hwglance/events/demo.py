@@ -26,6 +26,7 @@ def _systemtime(st: time.struct_time) -> bytes:
 class _Builder:
     def __init__(self) -> None:
         self.events: list[RawEvent] = []
+        self.downs: list[tuple[float, float]] = []      # (當掉, 重新開機)：示範黑盒子在這段沒有紀錄
         self._record = 0
 
     def add(self, log: str, provider: str, event_id: int, level: int, t: float, *, fields: Mapping[str, str] | None = None,
@@ -76,6 +77,7 @@ class _Builder:
 
     def crash(self, alive: float, boot: float, *, bugcheck: int = 0, button: bool = False, sleep: bool = False) -> None:
         """一次當機：開機（Kernel-General 12）→ 傾印檔 → Kernel-Power 41 → 藍屏代碼 → 6008，間隔照真的。"""
+        self.downs.append((alive, boot))
         start = time.strftime("%Y-%m-%dT%H:%M:%S.5000000Z", time.gmtime(boot - 4))
         self.add(SYSTEM, "Microsoft-Windows-Kernel-General", 12, 4, boot - 4,
                  fields={"MajorVersion": "10", "MinorVersion": "0", "BuildVersion": "26100", "StartTime": start},
@@ -100,6 +102,10 @@ class _Builder:
 
 
 def build(now: float) -> list[RawEvent]:
+    return sorted(_build(now).events, key=lambda e: e.time, reverse=True)
+
+
+def _build(now: float) -> _Builder:
     b = _Builder()
     # 3 小時前（10/31 10:10）：FECS 致命錯誤 → TDR → 74 秒後整張卡重設 → 讀顯卡的程式跟著當掉，沒有藍屏
     t = now - 3 * H
@@ -222,26 +228,31 @@ def build(now: float) -> list[RawEvent]:
         day = now - d * D
         b.add(SYSTEM, "Microsoft-Windows-Kernel-Power", 107, 4, day - 9 * H, message="系統已從睡眠狀態繼續。")
         b.add(SYSTEM, "Microsoft-Windows-Kernel-Power", 42, 4, day - 2 * H, message="系統正在進入睡眠狀態。")
-    return sorted(b.events, key=lambda e: e.time, reverse=True)
+    return b
 
 
 class DemoEventLog:
-    """跟 reader.WindowsEventLog 一樣的介面；now 固定的話每次結果都一樣（測試用）。"""
+    """跟 reader.WindowsEventLog 一樣的介面。時間以 now 為準，不給就用建立的那一刻（之後固定）：
+    事件頁與示範黑盒子（downs）看的才是同一組時間，不會差一分鐘就對不上。"""
 
     kind = "demo"
 
     def __init__(self, now: float | None = None) -> None:
-        self._now = now
-        self._cache: tuple[float, list[RawEvent]] | None = None
+        self._now = now if now is not None else time.time()
+        self._cache: tuple[float, list[RawEvent], list[tuple[float, float]]] | None = None
 
-    def _events(self) -> tuple[float, list[RawEvent]]:
-        now = self._now if self._now is not None else time.time()
-        if self._cache is None or abs(self._cache[0] - now) > 60:
-            self._cache = (now, build(now))
+    def _events(self) -> tuple[float, list[RawEvent], list[tuple[float, float]]]:
+        if self._cache is None:
+            b = _build(self._now)
+            self._cache = (self._now, sorted(b.events, key=lambda e: e.time, reverse=True), b.downs)
         return self._cache
 
+    def downs(self) -> list[tuple[float, float]]:
+        """示範的幾次當機：(當掉, 重新開機)，示範黑盒子（sensors/blackbox.py）在這段沒有紀錄。"""
+        return self._events()[2]
+
     def read(self, channel: str, providers: Mapping[str, Iterable[int] | None], days: float | None) -> list[RawEvent]:
-        now, events = self._events()
+        now, events, _ = self._events()
         since = now - days * D if days else None
         wanted = {p: (None if ids is None else frozenset(ids)) for p, ids in providers.items()}
         out = []

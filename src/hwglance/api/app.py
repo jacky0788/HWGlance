@@ -5,6 +5,7 @@
     GET  /api/sensors           LHM 的原始硬體樹（除錯、「全部感測器」用）
     GET  /api/device?id=        一個硬體的詳細資訊（規格＋所有讀數，分段、中文；sensors/details.py）
     GET  /api/events?days=      硬體相關的 Windows 事件（當機、顯示卡、硬碟…）歸成一件件事；days=0 是全部（events/）
+    GET  /api/blackbox?start=&end=  黑盒子：那段時間每 2 秒的主要讀數（最多 6 小時，sensors/blackbox.py）
     GET  /api/status            程式資訊（--activate 用來確認是不是自己）
     GET  /api/settings          設定＋預設值與名稱（設定頁用）
     PUT  /api/settings          存設定（要 token），下一輪讀數就生效
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import time
 from collections.abc import Callable
 
 from fastapi import FastAPI, Query, Request
@@ -27,12 +29,14 @@ from pydantic import BaseModel
 
 from .. import APP_NAME, __version__, paths
 from ..events.service import EventService
+from ..sensors.blackbox import BlackBox, DemoBlackBox
 from ..sensors.service import SensorService
 from ..sensors.thresholds import DEFAULTS, LABELS
 from ..settings import BAND_RANGE, INTERVALS, Settings, SettingsStore
 from . import security
 
 NO_STORE = {"Cache-Control": "no-store"}
+BLACKBOX_SPAN = 6 * 3600              # 黑盒子一次最多看 6 小時（8/22 那次硬碟斷線錯了 3 小時）
 NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>HWGlance</title>
 <p style="font-family:sans-serif;margin:2rem">介面還沒建置：在 frontend 資料夾執行
 <code>npm install</code> 與 <code>npm run build</code>，或直接雙擊 run.bat。</p>"""
@@ -68,6 +72,7 @@ def create_app(service: SensorService, token: str | None = None,
                settings: SettingsStore | None = None,
                on_quit: Callable[[], None] | None = None,
                events: EventService | None = None,
+               blackbox: BlackBox | DemoBlackBox | None = None,
                allowed_hosts: frozenset[str] = security.LOCAL_HOSTS) -> FastAPI:
     app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token or secrets.token_urlsafe(24)
@@ -98,6 +103,14 @@ def create_app(service: SensorService, token: str | None = None,
         if events is None:
             return JSONResponse({"detail": "這個模式沒有事件記錄"}, status_code=404)
         return JSONResponse(events.report(days or None), headers=NO_STORE)
+
+    @app.get("/api/blackbox")
+    def blackbox_window(start: float = Query(..., ge=0), end: float = Query(..., ge=0)) -> JSONResponse:
+        if blackbox is None:
+            return JSONResponse({"detail": "這個模式沒有黑盒子"}, status_code=404)
+        if not (0 < end - start <= BLACKBOX_SPAN and end <= time.time() + 86400):
+            return JSONResponse({"detail": "時間範圍要在 6 小時以內"}, status_code=422)
+        return JSONResponse(blackbox.read(start, end, bands=service.bands), headers=NO_STORE)
 
     @app.get("/api/status")
     def status() -> dict:

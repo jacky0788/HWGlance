@@ -11,6 +11,7 @@ from hwglance.api.app import create_app
 from hwglance.core import pick_port
 from hwglance.events.demo import DemoEventLog
 from hwglance.events.service import EventService
+from hwglance.sensors.blackbox import DemoBlackBox
 from hwglance.sensors.demo import DemoSource
 from hwglance.sensors.service import SensorService
 
@@ -32,8 +33,10 @@ def client(opened, tmp_path, monkeypatch):
     assert service.open()
     service.tick()
     service.load_specs()
-    events = EventService(DemoEventLog(now=NOW), service.disk_models, clock=lambda: NOW)
-    app = create_app(service, TOKEN, open_ui=opened.append, events=events)
+    log = DemoEventLog(now=NOW)
+    events = EventService(log, service.disk_models, clock=lambda: NOW)
+    app = create_app(service, TOKEN, open_ui=opened.append, events=events,
+                     blackbox=DemoBlackBox(log.downs, clock=lambda: NOW))
     return TestClient(app, base_url="http://127.0.0.1:8796")
 
 
@@ -76,10 +79,24 @@ def test_events(client):
     assert client.get("/api/events", params={"days": 99999}).status_code == 422
 
 
+def test_blackbox(client):
+    start = NOW - 3 * 3600 - 300                         # 示範：3 小時前那次顯示卡出錯的前 5 分鐘
+    r = client.get("/api/blackbox", params={"start": start, "end": start + 600})
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    w = r.json()
+    assert w["count"] > 0 and w["keepDays"] == 7 and w["gaps"] == []
+    assert {"CPU", "GPU 核心", "GPU 功耗"} <= {k["label"] for k in w["keys"]}
+    assert client.get("/api/blackbox", params={"start": start, "end": start + 7 * 3600}).status_code == 422
+    assert client.get("/api/blackbox", params={"start": start, "end": start}).status_code == 422
+    assert client.get("/api/blackbox", params={"start": -5, "end": 10}).status_code == 422
+
+
 def test_events_without_event_log(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "frontend_dist", lambda: tmp_path / "dist")
     app = create_app(SensorService(DemoSource(seed=1), env=ENV), TOKEN)
-    assert TestClient(app, base_url="http://127.0.0.1:8796").get("/api/events").status_code == 404
+    client = TestClient(app, base_url="http://127.0.0.1:8796")
+    assert client.get("/api/events").status_code == 404
+    assert client.get("/api/blackbox", params={"start": NOW - 60, "end": NOW}).status_code == 404
 
 
 def test_status(client):
