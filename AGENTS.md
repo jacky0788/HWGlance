@@ -73,7 +73,9 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
    （`test_watched_covers_every_rule` 會擋）；黑盒子記的鍵就是 `normalize.history_values`（改了舊檔照樣讀得到，
    說明寫在每個檔裡），回傳的欄位（`blackbox.summarize`）→ `types.ts` 的 `BlackBoxWindow`。
 8. commit 不加 AI 署名；repo 自設身分 `HWGlance <jacky0788@users.noreply.github.com>`；使用者說要才 commit。
-   遠端是 GitHub 私人 repo `jacky0788/HWGlance`（2026-10-31 建立），使用者說要才 push。
+   遠端是 GitHub **公開** repo `jacky0788/HWGlance`（2026-11-02 重開成公開、MIT；舊的私人 repo 改名 `HWGlance-old`，
+   裡面有含真實硬碟序號的舊歷史，待使用者刪掉），使用者說要才 push。公開了：**測試、示範資料不能放真機的序號、路徑**，
+   push 前掃一次（2026-11-02 在 tests/test_events.py 抓到一個，已改寫歷史拿掉）。
 
 ## 怎麼跑
 

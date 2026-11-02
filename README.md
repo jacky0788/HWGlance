@@ -32,4 +32,10 @@
 
 技術說明、決策與進度見 [docs/SPEC.md](docs/SPEC.md)；給接手的 agent 看 [AGENTS.md](AGENTS.md)。
 
-感測器讀取用 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)（MPL-2.0）。
+## 授權
+
+HWGlance 本身是 [MIT](LICENSE)。用到的第三方元件各有自己的授權，都不放在這個 repo 裡（第一次執行時從官方 release 下載、比對 SHA-256）：
+
+- 感測器讀取：[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)（MPL-2.0）
+- 遊戲 FPS：[PresentMon](https://github.com/GameTechDev/PresentMon)（MIT）
+- 可攜版另外附上嵌入版 Python 與套件，授權清單在可攜版的「第三方授權.txt」
