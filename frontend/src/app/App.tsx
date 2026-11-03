@@ -1,4 +1,4 @@
-// 主畫面有兩頁：即時監控（#live，預設）與事件記錄（#events）。迷你模式不是網頁，是本體的疊加層視窗（後端 mini/）。
+// 主畫面有三頁：即時監控（#live，預設）、事件記錄（#events）、暫存檔（#temp）。迷你模式不是網頁，是本體的疊加層視窗（後端 mini/）。
 // 溫度單位從快照的 prefs 來，用 context 往下傳；卡片顏色也從 prefs 來，寫在 <html> 上（lib/colors.ts）。
 // 在事件記錄頁時快照照樣每秒抓，切回來折線圖才不會斷。
 import { useCallback, useEffect, useState } from "react";
@@ -13,9 +13,10 @@ import { useHistory } from "../lib/useHistory";
 import { useSnapshot } from "../lib/useSnapshot";
 import { Dashboard } from "../pages/Dashboard";
 import { Events } from "../pages/Events";
+import { Temp } from "../pages/Temp";
 
 function pageOf(hash: string): Page {
-  return hash === "#events" ? "events" : "live";
+  return hash === "#events" ? "events" : hash === "#temp" ? "temp" : "live";
 }
 
 // 迷你模式右鍵的「迷你模式設定…」開主畫面時帶 #settings/mini：直接打開設定頁、捲到那一段，網址換回 #live
@@ -72,6 +73,8 @@ export default function App() {
           onSettings={() => setSettingsOpen(true)} />
         {page === "events" ? (
           <Events />
+        ) : page === "temp" ? (
+          <Temp />
         ) : ready ? (
           <Dashboard snap={snap} series={series} offline={error} />
         ) : (

@@ -6,7 +6,8 @@
     row     = {label, value, unit?, note?, temp?, level?, min?, max?, measure?}   溫度一律 °C、temp: true（前端換 °F）
     table   = {columns: [{label, unit?}], rows: [{label, cells: [...]}]}
     bars    = {label, unit, max, items: [{label, value}]}
-    ranking = {total?: {value, unit}, items: [{label, note, value, unit, share}]}   排行（顯存被誰佔用），share 是佔總量幾成
+    ranking = {total?: {value, unit}, items: [{label, note, value, unit, share, process?: {pid, created}}]}
+              排行（顯存被誰佔用），share 是佔總量幾成；process 有的才有「關閉」按鈕（processes.py）
 measure 是這段量的是什麼（temp、load、clock、power、fan、data、flow），前端照它配圖示與數值的顏色；
 「其他讀數」什麼都有，改成每一行自己帶 measure。
 挑剩的感測器放在最後的「其他讀數」，新硬體的讀數也不會漏掉。
@@ -331,14 +332,18 @@ def _gpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
         big = [x for x in specs["gpuProcesses"] if x["bytes"] >= PROCESS_MIN_BYTES]
         whole = total.value * 2**20 if total is not None and total.value else max((x["bytes"] for x in big), default=0)
         items = [{"label": x["name"], "note": f'PID {x["pid"]}', **dict(zip(("value", "unit"), _bytes(x["bytes"]))),
-                  "share": round(min(1.0, x["bytes"] / whole), 3)} for x in big]
+                  "share": round(min(1.0, x["bytes"] / whole), 3),
+                  # 「關閉」按鈕用（processes.py）：pid＋啟動時間才認得出同一個程式；查不到啟動時間、系統程式不給關
+                  **({"process": {"pid": x["pid"], "created": x["created"]}}
+                     if x.get("created") and not x.get("protected") else {})}
+                 for x in big]
         ranking = None
         if items:   # 跟讀數長得不一樣：名次＋佔總顯存的長條（使用者 2026-11-01 說會跟其他讀數混在一起）
             ranking = {"items": items}
             if total is not None and total.value:
                 value, unit = _bytes(whole)
                 ranking["total"] = {"value": value, "unit": unit}
-        note = "Windows 統計各程式用掉的專用顯存（跟工作管理員一樣），只列超過 100 MB 的"
+        note = "Windows 統計各程式用掉的專用顯存（跟工作管理員一樣），只列超過 100 MB 的；系統程式沒有「關閉」"
         users = _section("顯存被誰佔用", (), note if items else note + "；目前沒有程式超過", measure="data",
                          ranking=ranking, keep=True)
     fans = _fan_table(p)

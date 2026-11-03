@@ -98,6 +98,10 @@ class SensorService:
             disks = self._specs.get("disks") or {}
         return {number: d["model"] for number, d in disks.items() if d.get("model")}
 
+    def forget_gpu_processes(self) -> None:
+        """關掉了某個程式：下一次詳細資訊重查，不等 2 秒的快取（排行馬上少一行）。"""
+        self._gpu_procs = None
+
     def gpu_processes(self) -> list[dict] | None:
         reader = getattr(self.source, "gpu_processes", None)
         if not callable(reader):

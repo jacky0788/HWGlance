@@ -4,7 +4,7 @@
 2. 會改東西的請求（POST…）要帶 X-HWGlance-Token。token 每次啟動隨機產生，只寫進我們自己送出的
    index.html 與 data/instance.json；別的網站送不出自訂標頭（瀏覽器會先問 preflight，而這裡不開 CORS）。
 
-本體以系統管理員執行，所以這裡更要守好：API 只讀感測資料，唯一會動作的是「打開自己的視窗」。
+本體以系統管理員執行，所以這裡更要守好：API 幾乎只讀，會動作的清單在 app.py 開頭（關閉別的程式另有 processes.py 的規則）。
 """
 from __future__ import annotations
 

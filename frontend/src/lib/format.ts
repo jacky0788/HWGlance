@@ -31,6 +31,16 @@ export function size(gb: number): string {
   return gb >= 1000 ? `${(gb / 1024).toFixed(2)} TB` : `${int.format(gb)} GB`;
 }
 
+/** 位元組 → 「820 KB」「12.5 MB」「1.2 GB」（暫存檔頁） */
+export function bytes(n: number): string {
+  if (n < 2 ** 20) return `${Math.max(n > 0 ? 1 : 0, Math.round(n / 1024))} KB`;
+  if (n < 2 ** 30) {
+    const mb = n / 2 ** 20;
+    return `${mb < 10 ? mb.toFixed(1) : int.format(Math.round(mb))} MB`;
+  }
+  return `${(n / 2 ** 30).toFixed(1)} GB`;
+}
+
 export interface Shown {
   value: string;
   unit: string;

@@ -159,10 +159,87 @@ export interface DetailBars {
   items: { label: string; value: number | null }[];
 }
 
-// 排行（顯存被誰佔用）：名次＋佔總量的長條
+// 排行（顯存被誰佔用）：名次＋佔總量的長條；process 有的才有「關閉」按鈕
+export interface ProcessRef {
+  pid: number;
+  created: string; // 啟動時間（FILETIME 的字串）：pid 會被重複使用，靠它認出同一個程式
+}
+
 export interface DetailRanking {
   total?: { value: number; unit: string };
-  items: { label: string; note: string; value: number; unit: string; share: number }[];
+  items: { label: string; note: string; value: number; unit: string; share: number; process?: ProcessRef }[];
+}
+
+// GET /api/processes/plan：按「關閉」前先問（processes.py）
+export interface ClosePlan {
+  pid: number;
+  name: string;
+  blocked: string | null; // 不能關的原因
+  target?: ProcessRef & { name: string }; // 真的要關的程式（沒有自己視窗時是它的主程式）
+  gentle?: boolean; // 有視窗、可以好好關；false＝只能強制結束
+}
+
+// GET /api/memory：記憶體的組成（memory.py；各段加起來＝total）
+export type MemorySegmentKey = "used" | "compressed" | "modified" | "standby" | "free";
+
+export interface MemoryRelease {
+  before: number; // 「可用」之前／之後（位元組）
+  after: number;
+  freed: number;
+  freeBefore: number; // 「完全空著」之前／之後：清待命快取只會讓這個變多
+  freeAfter: number;
+  trimmed: number;
+  tried: number;
+  skippedForeground: boolean;
+  standby: "purged" | "needs_admin" | "failed";
+  time: number;
+}
+
+export interface MemoryStatus {
+  total: number;
+  available: number;
+  segments: { key: MemorySegmentKey; label: string; note: string; bytes: number }[];
+  compression: { enabled: boolean; bytes: number };
+  canPurge: boolean; // 清待命快取要系統管理員
+  last: MemoryRelease | null;
+}
+
+// POST /api/temp/scan：暫存資料夾的掃描結果（tempfiles.py）。只管放超過 1 天的檔；動作只收 id（不收路徑）
+export interface TempGroup {
+  key: string; // 「pid:啟動時間」或 unknown
+  name: string;
+  protected: string | null; // 不能關的原因（系統程式）
+  process: ProcessRef | null; // 有的才給「關掉這個程式」
+  files: number;
+  bytes: number;
+  samples: string[]; // 前幾個檔名（相對於暫存資料夾）
+  bootDelete: boolean; // 能不能「下次開機刪除」（只有使用者自己的暫存）
+}
+
+export interface TempScan {
+  id: string;
+  time: number;
+  took: number;
+  truncated: boolean;
+  roots: { label: string; path: string; files: number; bytes: number; old: number; oldBytes: number; readable: boolean }[];
+  deletable: { files: number; bytes: number };
+  locked: TempGroup[];
+  denied: { files: number; bytes: number };
+  admin: boolean;
+}
+
+export interface TempCleanResult {
+  deleted: number;
+  bytes: number;
+  dirs: number;
+  failed: number;
+  locked: number;
+}
+
+// POST /api/processes/close 的結果
+export interface CloseResult {
+  result: "closed" | "running" | "no_window" | "killed" | "failed";
+  name: string;
 }
 
 export interface DetailSection {

@@ -34,6 +34,9 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `src/hwglance/ui.py` | 主畫面的視窗程序（pywebview）：只有主畫面（`UiApp.switch` 叫出來）、長輪詢本體指令（`poll_commands`） |
 | `src/hwglance/mini/` | 迷你模式（SPEC D29）：`items.py` 能顯示什麼、從快照怎麼拿值（純函式）、`render.py` 用 Pillow 畫成有透明度的圖（顏色照 tokens.css 深色，`tests/test_mini.py` 會比對）、`window.py` Win32 分層視窗（自己的執行緒＋訊息迴圈、每個螢幕的 DPI、拖曳、雙擊、右鍵選單、鎖定＝滑鼠穿透，位置記在 `data/mini.json`）、`__init__.py` 的 `MiniMode` 接起來 |
 | `src/hwglance/fps.py` | 遊戲 FPS：跑 PresentMon（`vendor/presentmon`）讀 CSV，前景程式最近 1 秒的 FPS、幀時間、10 秒的 1% Low；只在迷你模式開著、有勾 FPS 時才跑；`DemoFps` 示範用；`tests/test_fps.py` 用假的輸出測 |
+| `src/hwglance/processes.py` | 關閉別的程式（SPEC D31，顯存排行旁的「關閉」）：`Offers`（只收自己列出來的 pid＋啟動時間）、`protected_reason`（系統程式、服務、關鍵程式、自己不給關）、`pick_target`（沒視窗的子程式只往上找同一個執行檔，WebView2 到用它的程式）、`WindowsProcesses`（WM_CLOSE 好好關／TerminateProcess 強制結束、寫 `data/actions.log`）、`DemoProcesses`（示範資料一律用這個）；`tests/test_processes.py` |
+| `src/hwglance/memory.py` | 記憶體的組成與「釋放記憶體」（SPEC D32）：`compose`（計數器 → 各段，純函式）、`Counters`（一直開著的 PDH 查詢）、`trim_targets`（跳過核心、壓縮區、前景程式）、`MemoryTool`（`status` 只讀；`release` 收回工作集＋系統管理員時清待命快取、20 秒一次、寫 actions.log；每個 Windows 呼叫都能換成假的）、`DemoMemory`；`tests/test_memory.py` |
+| `src/hwglance/tempfiles.py` | 暫存資料夾裡被鎖住的檔（SPEC D33）：`TempCleaner`（`scan` 掃超過 1 天的檔、分可以刪／被鎖住／沒權限，鎖住的用 `lockers`（重新啟動管理員）找程式、記進 processes 的 Offers；`clean` 只刪那次掃描的；`boot_delete` 只限使用者自己的暫存）、`delete_safely`（開檔→查真路徑還在暫存裡、不是重新剖析點→對同一個控制代碼標記刪除）、`DemoTemp`；`tests/test_tempfiles.py` |
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
 | `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、WebView2 版本（沒有就用瀏覽器開）、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
@@ -44,8 +47,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
 | ProjectHub 的 `registry/hwglance/project.toml` | 登錄到 ProjectHub（只有「啟動」一個按鈕）；要改照 ProjectHub 的 `docs/SOP-edit-project.md` |
-| `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`，`App.tsx` 的 `usePage` 看網址切換），只負責排版；迷你模式不是網頁（後端 `mini/`），「迷你模式」按鈕是叫 `POST /api/ui/open` |
-| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`）、`events/`（事件頁的摘要與篩選、清單（零星的收成一行）、`BlackBox.tsx` 點開一件事時的黑盒子讀數、`useEvents.ts` 抓 `/api/events` 與頂端列的 7 天徽章）、`status/`（頂端列與分頁、提醒、底部）、`settings/`（設定面板；`MiniSection.tsx` 是迷你模式那一段） |
+| `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`）、`Temp.tsx` 暫存檔頁（`#temp`，掃描、刪除、被鎖住的程式；`App.tsx` 的 `usePage` 看網址切換），只負責排版；迷你模式不是網頁（後端 `mini/`），「迷你模式」按鈕是叫 `POST /api/ui/open` |
+| `frontend/src/features/` | `overview/`（總覽磚塊）、`devices/`（CPU／GPU 大卡、主機板、記憶體（`MemoryBreakdown.tsx` 組成長條＋釋放）、硬碟）、`details/`（點硬體跳出的詳細資訊視窗，原生 `<dialog>`，開著時跟著快照每秒抓 `/api/device`；`RankingItem.tsx` 是顯存排行的一行＋「關閉」）、`processes/`（`CloseProcess.tsx`：「關閉程式」的整套流程——先問、原地確認、關不掉才問強制結束；顯存排行與暫存檔頁共用，**要關程式就用這個**）、`events/`（事件頁的摘要與篩選、清單（零星的收成一行）、`BlackBox.tsx` 點開一件事時的黑盒子讀數、`useEvents.ts` 抓 `/api/events` 與頂端列的 7 天徽章）、`status/`（頂端列與分頁、提醒、底部）、`settings/`（設定面板；`MiniSection.tsx` 是迷你模式那一段） |
 | `frontend/src/components/` | `TempGauge`（弧形儀表）、`Sparkline`（折線）、`Card`（給 `onOpen` 就整張可點、標題列有「詳細」按鈕）、`Readout`（數值格與清單列）、`Segmented`（分段按鈕） |
 | `frontend/src/lib/` | `api.ts`（唯一發請求的地方）、`useSnapshot.ts`（每秒抓、看不到就停）、`useHistory.ts`、`format.ts`（溫度一律傳 °C 進來，顯示時才換 °F）、`prefs.ts`（溫度單位的 context）、`colors.ts`（設定的卡片顏色寫到 `<html>` 的 `--kind-*`，只寫改過的）、`measures.ts`（數值量的是什麼 → 圖示，卡片與詳細資訊共用）、`bridge.ts`（桌面視窗的切換／關閉） |
 | `frontend/src/styles/tokens.css` | 顏色與字級，全站視覺只在這裡調；溫度三色 `--ok`／`--warm`／`--hot`；硬體種類色 `--kind-*`（預設指向調色盤 `--swatch-*`，設定頁可換；外層加 `kind-cpu` 這類 class）用在圖示與裝飾（`--deco`：磚塊色條、儀表、走勢、長條）；數值的種類色 `--m-*`（負載、時脈、功耗、風扇、容量，外層加 `m-load` 這類 class，SPEC D28）；**溫度數字只用 `--level`（綠黃紅），不要套種類色**，外框也不要上色（使用者兩次糾正，SPEC D22） |
@@ -55,8 +58,14 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 1. **測試絕不碰真的硬體、不載入 LHM**：用 `tests/conftest.py` 的假樹或 `DemoSource`。
 2. **只有 `sensors/lhm.py` 可以 import clr／pythonnet**（`tests/test_consistency.py` 會擋）。
 3. **API 幾乎只讀**。會動作的只有：存自己的設定（`PUT /api/settings`）、開自己的視窗（`POST /api/ui/open`）、
-   結束自己（`POST /api/app/quit`），以及視窗程序拿指令（`GET /api/ui/commands`），全都要 token。本體以系統管理員執行，
-   不要加會執行指令、寫任意檔案、改硬體設定（例如風扇轉速）的 API，要加先跟使用者討論。
+   結束自己（`POST /api/app/quit`）、視窗程序拿指令（`GET /api/ui/commands`），以及使用者 2026-11-03 同意的
+   「關閉顯存排行上的程式」（`POST /api/processes/close`，規則在 `processes.py` 開頭：只收自己列出來的、比對啟動時間、
+   系統程式不給關、先好好關）、「釋放記憶體」（`POST /api/memory/release`，SPEC D32）與「清暫存資料夾」
+   （`/api/temp/*`，SPEC D33：只收掃描編號、不收路徑，刪前用控制代碼確認真路徑），全都要 token。
+   本體以系統管理員執行，不要加會執行指令、寫任意檔案、改硬體設定（例如風扇轉速）的 API，要加先跟使用者討論。
+   **測試、驗證絕不關使用者的程式、不動使用者的記憶體、不掃也不刪使用者的暫存資料夾**：只關、只收回測試自己開的假程式
+   （用 `sys._base_executable` 開，venv 的 python.exe 只是轉一手）、只在 pytest 的暫存資料夾裡刪；清待命快取、下次開機刪除不在測試裡真的呼叫；
+   示範資料一律用 `DemoProcesses`、`DemoMemory`、`DemoTemp`。
 4. 前端不寫 px（用 rem／em／%／fr，1px 細線例外）、`useEffect` 一律用大括號、顏色只用 `tokens.css` 的變數（測試會擋）。
 5. `.bat` 只能 ASCII＋CRLF（cmd.exe 用系統碼頁讀）。Write 工具寫出來是 LF，要用 PowerShell 轉：
    `[IO.File]::WriteAllText(路徑, ($文字 -replace "`r?`n", "`r`n"), [Text.Encoding]::ASCII)`。
@@ -71,7 +80,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
    新的 `measure`（`details.MEASURES`）→ `types.ts` 的 `Measure`、`lib/measures.ts`、`index.css` 的 `.m-*`；
    事件記錄的欄位（`events/incidents.py` 的 `incident`／`report`）→ `types.ts`；`catalog.WATCHED` 加來源 → 要有對應的規則
    （`test_watched_covers_every_rule` 會擋）；黑盒子記的鍵就是 `normalize.history_values`（改了舊檔照樣讀得到，
-   說明寫在每個檔裡），回傳的欄位（`blackbox.summarize`）→ `types.ts` 的 `BlackBoxWindow`。
+   說明寫在每個檔裡），回傳的欄位（`blackbox.summarize`）→ `types.ts` 的 `BlackBoxWindow`；
+   記憶體組成的段（`memory.SEGMENTS`）→ `types.ts` 的 `MemorySegmentKey`、`MemoryBreakdown.tsx` 的 `SEGMENT_COLOR`、`tokens.css` 的 `--mem-*`。
 8. commit 不加 AI 署名；repo 自設身分 `HWGlance <jacky0788@users.noreply.github.com>`；使用者說要才 commit。
    遠端是 GitHub **公開** repo `jacky0788/HWGlance`（2026-11-02 重開成公開、MIT；舊的私人 repo 改名 `HWGlance-old`，
    裡面有含真實硬碟序號的舊歷史，待使用者刪掉），使用者說要才 push。公開了：**測試、示範資料不能放真機的序號、路徑**，

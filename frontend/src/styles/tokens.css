@@ -58,6 +58,12 @@
   --m-power: #b8520f;
   --m-fan: #0b7a70;
   --m-data: #b8236a;
+
+  /* 記憶體組成的長條（SPEC D32）：使用中用卡片的種類色 --kind，其他照這幾個；深色模式跟著調色盤換 */
+  --mem-compressed: var(--swatch-indigo);
+  --mem-modified: var(--m-power);
+  --mem-standby: var(--swatch-sky);
+  --mem-free: var(--swatch-silver);
 }
 
 @media (prefers-color-scheme: dark) {

@@ -281,6 +281,18 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         box = recorder = BlackBox(paths.data_dir() / "blackbox")
     service = SensorService(source)
     events = EventService(event_log, service.disk_models)
+    # 會動到別的程式的功能（SPEC D31 關閉程式、D32 釋放記憶體）：示範資料一定要用假的——示範的 pid 是編的，
+    # 拿去關會關到這台不相干的程式；示範模式按「釋放」也不能真的動這台的記憶體
+    from .memory import DemoMemory, MemoryTool
+    from .processes import ActionLog, DemoProcesses, WindowsProcesses
+    from .tempfiles import DemoTemp, TempCleaner
+    if demo:
+        processes, memory = DemoProcesses(source), DemoMemory()
+        temp = DemoTemp(processes)                   # 示範：不碰這台的暫存資料夾
+    else:
+        actions = ActionLog(paths.data_dir() / "actions.log")
+        processes, memory = WindowsProcesses(actions), MemoryTool(log=actions)
+        temp = TempCleaner(processes, actions)
     apply_settings(service, store.get())
     store.subscribe(lambda s: apply_settings(service, s))
     if recorder is not None:
@@ -331,7 +343,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
                                ui_commands=window.next_commands if window else None,
                                settings=store, on_quit=quit_event.set, events=events, blackbox=box,
                                mini_info=(lambda: {"fps": fps.status(), "hotkeys": mini.hotkeys})
-                               if mini is not None else None), port)
+                               if mini is not None else None, processes=processes, memory=memory, temp=temp), port)
     server.start()
     if not server.wait_ready():
         service.stop()

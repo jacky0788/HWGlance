@@ -230,7 +230,10 @@ def process_name(pid: int, table: dict[int, tuple[str, int]], me: int,
 
 
 def gpu_processes() -> list[dict]:
-    """用了顯存的程式：[{pid, name, path, bytes}]，大的在前。"""
+    """用了顯存的程式：[{pid, created, protected, name, bytes}]，大的在前。created 是啟動時間（processes.created_at），
+    「關閉」按鈕靠 pid＋它認出同一個程式（pid 會被重複使用）；查不到就是 None，那一行不給關。
+    protected 是不能關的原因（系統程式、HWGlance 自己…，processes.protected_reason），有的就不出現按鈕。"""
+    from .processes import created_at, protected_reason      # processes 也 import 這裡，放函式裡避免循環
     out = []
     usage = gpu_memory_by_pid()
     table = process_table() if usage else {}
@@ -238,7 +241,8 @@ def gpu_processes() -> list[dict]:
     for pid, used in usage.items():
         if used <= 0:
             continue
-        out.append({"pid": pid, "name": process_name(pid, table, me), "bytes": used})
+        out.append({"pid": pid, "created": created_at(pid), "protected": protected_reason(pid, table, me),
+                    "name": process_name(pid, table, me), "bytes": used})
     return sorted(out, key=lambda p: -p["bytes"])
 
 

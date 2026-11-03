@@ -1,10 +1,10 @@
 // 頂端列（名稱、即時監控／事件記錄分頁、權限／驅動狀態）、提醒（為什麼有些溫度讀不到）、底部（更新時間、讀取耗時）。
-import { Activity, PictureInPicture2, ScrollText, Settings, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Activity, FolderLock, PictureInPicture2, ScrollText, Settings, ShieldAlert, TriangleAlert } from "lucide-react";
 import { clockTime } from "../../lib/format";
 import type { EventBadge } from "../events/useEvents";
 import type { Snapshot } from "../../types";
 
-export type Page = "live" | "events";
+export type Page = "live" | "events" | "temp";
 
 function Chip({ ok, children }: { ok: boolean; children: string }) {
   return (
@@ -18,7 +18,7 @@ function Chip({ ok, children }: { ok: boolean; children: string }) {
 const barButton =
   "inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg-muted hover:border-line-strong hover:text-fg cursor-pointer";
 
-// 分頁用網址的 #live／#events 切換（App.tsx 的 usePage），重新整理也還在同一頁
+// 分頁用網址的 #live／#events／#temp 切換（App.tsx 的 usePage），重新整理也還在同一頁
 function PageTabs({ page, badge }: { page: Page; badge: EventBadge | null }) {
   const tab = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${active ? "bg-surface-2 text-fg font-semibold" : "text-fg-muted hover:text-fg"}`;
@@ -35,6 +35,9 @@ function PageTabs({ page, badge }: { page: Page; badge: EventBadge | null }) {
             {badge.count}<span className="sr-only"> 件要注意（最近 7 天）</span>
           </span>
         ) : null}
+      </a>
+      <a href="#temp" aria-current={page === "temp" ? "page" : undefined} className={tab(page === "temp")}>
+        <FolderLock className="size-3.5" aria-hidden /> 暫存檔
       </a>
     </nav>
   );

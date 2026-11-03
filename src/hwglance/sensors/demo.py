@@ -80,6 +80,7 @@ class DemoSource:
         self._clock = clock
         self.guard = guard or Guard()
         self._gpu_reset_at = gpu_reset_at
+        self._hidden: dict[int, float] = {}            # 示範「關閉」過的程式：pid → 什麼時候關的（2 分鐘後再出現）
         self._t0 = self._last = clock()
         self._cpu = _Lag(52.0, 6.0)
         self._gpu = _Lag(48.0, 14.0)
@@ -121,8 +122,16 @@ class DemoSource:
                  (31108, "SnippingTool", 441), (30548, "ChatGPT", 343), (27496, "Edge 瀏覽器", 285),
                  (12416, "檔案總管", 178), (20432, "RazerAppEngine", 114), (8812, "Discord", 64), (4120, "Steam", 22)]
         procs += [(11676, "HWGlance 這個視窗（WebView2）", 322), (32972, "pythonw（-m projecthub） 的視窗（WebView2）", 130)]
-        return sorted(({"pid": pid, "name": name, "bytes": int(mb * 2**20)} for pid, name, mb in procs),
+        now = self._clock()
+        system_ones = ("桌面視窗管理員", "檔案總管", "HWGlance 這個視窗")     # 跟真的一樣：系統程式、自己不給關
+        return sorted(({"pid": pid, "created": f"demo-{pid}", "name": name, "bytes": int(mb * 2**20),
+                        "protected": "這是 Windows 的一部分，關掉畫面或系統會出問題" if name.startswith(system_ones) else None}
+                       for pid, name, mb in procs if now - self._hidden.get(pid, -1e9) > 120),
                       key=lambda p: -p["bytes"])
+
+    def hide_process(self, pid: int) -> None:
+        """processes.DemoProcesses 示範「關閉」：從清單拿掉 2 分鐘（不碰任何真的程式）。"""
+        self._hidden[pid] = self._clock()
 
     def _busy(self, t: float, period: float, phase: float) -> float:
         """0～1 的負載，閒置與高負載交替，加一點雜訊。"""

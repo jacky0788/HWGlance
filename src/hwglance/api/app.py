@@ -12,8 +12,18 @@
     POST /api/ui/open           打開或叫出視窗：main／mini（要 token）
     GET  /api/ui/commands       視窗程序的長輪詢：等本體的指令（切換、結束），最多 timeout 秒（要 token）
     POST /api/app/quit          結束 HWGlance（要 token）
+    GET  /api/processes/plan?pid=&created=  按「關閉」前先問：會關哪個程式、能不能好好關、不能關的原因（只查不動）
+    POST /api/processes/close   關閉別的程式（要 token）：{pid, created, force}；只收 /api/device 列出來的程式（processes.py）
+    GET  /api/memory            記憶體的組成（使用中、已壓縮、待寫回、待命快取、完全空著）、能不能清待命快取、上一次釋放的結果
+    POST /api/memory/release    釋放記憶體（要 token，20 秒最多一次）：收回各程式暫時沒用的記憶體、清待命快取（memory.py）
+    POST /api/temp/scan         掃暫存資料夾（要 token）：放超過 1 天的檔，可以刪的、被誰鎖住的、沒權限的（tempfiles.py）
+    POST /api/temp/clean        刪掉那次掃描時可以刪的檔（要 token）：{id}；只收掃描編號、不收路徑
+    POST /api/temp/boot-delete  被鎖住的那組檔排到下次開機刪除（要 token、系統管理員）：{id, key}；只有使用者自己的暫存
 
-會動作的只有存設定、開視窗、結束三個，而且只動自己：存自己的設定、開自己的視窗、結束自己。
+會動作的：存自己的設定、開自己的視窗、結束自己，以及「關閉顯存排行上的程式」（SPEC D31：只收自己列出來的程式、
+比對啟動時間、系統程式不給關、先好好關再問要不要強制）、「釋放記憶體」（SPEC D32：跳過前景程式、不改系統設定）、
+「清暫存資料夾」（SPEC D33：只刪掃描列出來、放超過 1 天的檔，刪前用控制代碼確認還在暫存資料夾裡），都寫 data/actions.log。
+不收指令字串、不收路徑、不寫任意檔案。
 """
 from __future__ import annotations
 
@@ -33,6 +43,7 @@ from ..sensors.blackbox import BlackBox, DemoBlackBox
 from ..sensors.service import SensorService
 from ..sensors.thresholds import DEFAULTS, LABELS, cpu_band
 from ..mini.items import catalog
+from ..processes import ProcessError
 from ..settings import (BAND_RANGE, COLOR_DEFAULTS, COLOR_LABELS, COLOR_PRESETS, INTERVALS, MINI_OPACITY, MINI_SCALE,
                         MiniSettings, Settings, SettingsStore, mini_json)
 from . import security
@@ -46,6 +57,26 @@ NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>HWGlance</title>
 
 class OpenRequest(BaseModel):
     mode: str = "main"
+
+
+class CloseRequest(BaseModel):
+    pid: int
+    created: str
+    force: bool = False
+
+
+class TempRequest(BaseModel):
+    id: str
+    key: str = ""
+
+
+def offer_listed(detail: dict, processes) -> None:
+    """詳細資訊裡列出來的程式（排行的 process）記進可以關的名單；關閉只收這些。"""
+    for section in detail.get("sections", []):
+        for item in (section.get("ranking") or {}).get("items", []):
+            proc = item.get("process")
+            if proc:
+                processes.offers.offer(proc["pid"], proc["created"])
 
 
 class SettingsBody(BaseModel):
@@ -96,7 +127,11 @@ def create_app(service: SensorService, token: str | None = None,
                events: EventService | None = None,
                blackbox: BlackBox | DemoBlackBox | None = None,
                mini_info: Callable[[], dict] | None = None,
+               processes=None, memory=None, temp=None,
                allowed_hosts: frozenset[str] = security.LOCAL_HOSTS) -> FastAPI:
+    """processes：processes.WindowsProcesses（真的）或 DemoProcesses（示範資料一定要用這個）；None＝不能關程式。
+    memory：memory.MemoryTool（真的）或 DemoMemory（示範資料一定要用這個）；None＝沒有記憶體組成與釋放。
+    temp：tempfiles.TempCleaner（真的）或 DemoTemp（示範資料一定要用這個）；None＝沒有清暫存資料夾。"""
     app = FastAPI(title=APP_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token or secrets.token_urlsafe(24)
     store = settings or SettingsStore()
@@ -119,7 +154,67 @@ def create_app(service: SensorService, token: str | None = None,
         detail = service.details(device_id)
         if detail is None:
             return JSONResponse({"detail": "找不到這個硬體"}, status_code=404)
+        if processes is not None:
+            offer_listed(detail, processes)
+        else:                                          # 不能關的模式：介面上不出現「關閉」
+            for section in detail.get("sections", []):
+                for item in (section.get("ranking") or {}).get("items", []):
+                    item.pop("process", None)
         return JSONResponse(detail, headers=NO_STORE)
+
+    @app.get("/api/processes/plan")
+    def process_plan(pid: int = Query(..., ge=1), created: str = Query(..., min_length=1, max_length=40)) -> JSONResponse:
+        if processes is None:
+            return JSONResponse({"detail": "這個模式不能關程式"}, status_code=404)
+        return JSONResponse(processes.plan(pid, created), headers=NO_STORE)
+
+    @app.post("/api/processes/close")
+    def process_close(body: CloseRequest) -> JSONResponse:
+        if processes is None:
+            return JSONResponse({"detail": "這個模式不能關程式"}, status_code=404)
+        try:
+            result = processes.close(body.pid, body.created, body.force)
+        except ProcessError as e:
+            return JSONResponse({"detail": str(e)}, status_code=409)
+        service.forget_gpu_processes()
+        return JSONResponse(result, headers=NO_STORE)
+
+    @app.get("/api/memory")
+    def memory_status() -> JSONResponse:
+        if memory is None:
+            return JSONResponse({"detail": "這個模式沒有記憶體組成"}, status_code=404)
+        return JSONResponse(memory.status(), headers=NO_STORE)
+
+    @app.post("/api/memory/release")
+    def memory_release() -> JSONResponse:
+        if memory is None:
+            return JSONResponse({"detail": "這個模式不能釋放記憶體"}, status_code=404)
+        try:
+            return JSONResponse(memory.release(), headers=NO_STORE)
+        except RuntimeError as e:
+            return JSONResponse({"detail": str(e)}, status_code=429)
+
+    def temp_call(fn) -> JSONResponse:
+        if temp is None:
+            return JSONResponse({"detail": "這個模式不能清暫存資料夾"}, status_code=404)
+        try:
+            return JSONResponse(fn(), headers=NO_STORE)
+        except PermissionError as e:
+            return JSONResponse({"detail": str(e)}, status_code=403)
+        except (LookupError, RuntimeError) as e:
+            return JSONResponse({"detail": str(e)}, status_code=409)
+
+    @app.post("/api/temp/scan")
+    def temp_scan() -> JSONResponse:
+        return temp_call(lambda: temp.scan())
+
+    @app.post("/api/temp/clean")
+    def temp_clean(body: TempRequest) -> JSONResponse:
+        return temp_call(lambda: temp.clean(body.id))
+
+    @app.post("/api/temp/boot-delete")
+    def temp_boot_delete(body: TempRequest) -> JSONResponse:
+        return temp_call(lambda: temp.boot_delete(body.id, body.key))
 
     @app.get("/api/events")
     def event_log(days: int = Query(30, ge=0, le=3650)) -> JSONResponse:

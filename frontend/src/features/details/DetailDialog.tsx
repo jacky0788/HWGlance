@@ -9,6 +9,7 @@ import { number, temp, tempExact } from "../../lib/format";
 import { MEASURE_ICONS, colored } from "../../lib/measures";
 import type { MeasureOrNone } from "../../lib/measures";
 import { useUnit } from "../../lib/prefs";
+import { RankingItem } from "./RankingItem";
 import type {
   DetailBars, DetailRanking, DetailRow, DetailSection, DetailTable, Device, DeviceDetail, Kind,
 } from "../../types";
@@ -88,30 +89,14 @@ function Bars({ bars, tone }: { bars: DetailBars; tone: MeasureOrNone }) {
   );
 }
 
-// 排行：名次、名稱、用量，下面一條佔總量的長條（有總量時再寫佔幾 %）
+// 排行：名次、名稱、用量，下面一條佔總量的長條（有總量時再寫佔幾 %）；程式可以關的多一顆「關閉」（RankingItem）
 function Ranking({ ranking }: { ranking: DetailRanking }) {
   return (
     <ol className="m-0 mt-2.5 p-0 list-none space-y-2.5">
       {ranking.items.map((item, i) => (
-        <li key={`${i}:${item.label}`} className="min-w-0">
-          <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="min-w-0 truncate" title={item.label}>
-              <span className="mr-1.5 num text-fg-subtle">{i + 1}.</span>{item.label}
-            </span>
-            <span className="shrink-0 num font-medium text-(--m)">
-              {number(item.value)}<span className="ml-1 text-xs text-fg-subtle">{item.unit}</span>
-            </span>
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <div className="h-1.5 flex-1 rounded-full bg-track overflow-hidden">
-              <div className="h-full rounded-full bg-(--m) transition-[width] duration-500"
-                style={{ width: `${Math.max(1, Math.min(100, item.share * 100))}%` }} />
-            </div>
-            <span className="shrink-0 text-xs text-fg-subtle num">
-              {ranking.total ? `${item.share < 0.01 ? "<1" : Math.round(item.share * 100)}%・` : ""}{item.note}
-            </span>
-          </div>
-        </li>
+        // 每秒重排，key 用 pid（確認到一半時跟著那個程式走）；沒有 pid 的照舊用位置＋名稱
+        <RankingItem key={item.process ? `pid:${item.process.pid}` : `${i}:${item.label}`} item={item} index={i}
+          total={ranking.total != null} />
       ))}
     </ol>
   );
