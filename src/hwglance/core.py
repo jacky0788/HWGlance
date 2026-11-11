@@ -35,6 +35,8 @@ CREATE_NO_WINDOW = 0x08000000
 WM_CLOSE = 0x0010
 TRAY_HINT = ("關掉視窗後，HWGlance 會在這裡繼續監控，圖示上的數字就是 CPU 溫度。右鍵圖示可以結束。",
              "HWGlance 還在系統匣")
+MENUBAR_HINT = ("關掉視窗後，HWGlance 會在選單列繼續監控，上面的數字就是 CPU 溫度。點它可以開主畫面或結束。",
+                "HWGlance 還在選單列")
 NO_WEBVIEW_HINT = ("這台沒有 Microsoft Edge WebView2 Runtime，畫面改用瀏覽器開。裝好 WebView2 後重開 HWGlance 就是獨立視窗。",
                    "HWGlance 用瀏覽器開")
 
@@ -89,7 +91,11 @@ def apply_settings(service: SensorService, s: Settings) -> None:
 
 
 def window_python() -> str:
-    """開視窗用 pythonw（不會多一個黑色命令列視窗）。"""
+    """開視窗用 pythonw（不會多一個黑色命令列視窗）。Mac 從 HWGlance.app 開的：用 App 裡的 Python
+    （run.sh 設 HWGLANCE_APP_PYTHON），視窗程序在 Dock、選單列上才是 HWGlance 跟它的圖示，不是「Python」。"""
+    app_python = os.environ.get("HWGLANCE_APP_PYTHON", "")
+    if sys.platform == "darwin" and app_python and Path(app_python).exists():
+        return app_python
     exe = Path(sys.executable)
     pythonw = exe.with_name("pythonw.exe")
     return str(pythonw if pythonw.is_file() else exe)
@@ -216,6 +222,10 @@ class Window:
         exe = window_python()
         flags = CREATE_NO_WINDOW if sys.platform == "win32" and exe.endswith("python.exe") else 0
         env = {**os.environ, "HWGLANCE_TOKEN": self.token}     # 不放在命令列（工作管理員看得到）
+        if sys.platform == "darwin" and exe != sys.executable:
+            # App 裡的 Python 靠 __PYVENV_LAUNCHER__ 找到 .venv，但 Python 一啟動就把它從環境變數拿掉了，要再帶一次
+            # （本體的 sys.executable 就是當初帶進來的 .venv/bin/python）
+            env["__PYVENV_LAUNCHER__"] = sys.executable
         return subprocess.Popen([exe, "-m", "hwglance", "--ui", "--port", str(self.port), "--mode", mode],
                                 creationflags=flags, env=env)
 
@@ -227,6 +237,16 @@ def start_tray(open_ui: Callable[[str], None], quit_app: Callable[[], None], min
         tray = Tray(open_ui, quit_app, mini)
         tray.start()
         return tray
+    except Exception:                                     # noqa: BLE001
+        traceback.print_exc()
+        return None
+
+
+def start_menubar(open_ui: Callable[[str], None], quit_app: Callable[[], None]):
+    """Mac 的選單列（menubar.py）。開不起來（例如 PyObjC 沒裝好）就回傳 None，跟系統匣一樣：關掉視窗就結束。"""
+    try:
+        from .menubar import MenuBar
+        return MenuBar(open_ui, quit_app)
     except Exception:                                     # noqa: BLE001
         traceback.print_exc()
         return None
@@ -325,7 +345,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         if tray is None or not s.close_to_tray:
             quit_event.set()
         elif not s.tray_hint_shown:
-            tray.notify(*TRAY_HINT)
+            tray.notify(*(MENUBAR_HINT if sys.platform == "darwin" else TRAY_HINT))
             store.update(tray_hint_shown=True)
 
     if not serve_only and "mini" in features:
@@ -338,9 +358,10 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
                         notify=lambda message, title: tray.notify(message, title) if tray is not None else None)
         mini.start()
         views.mini = mini
-    # Mac 版還沒有選單列圖示（第 2 段）：沒有系統匣，關掉視窗就整個結束
+    # Mac 是選單列（menubar.py，要在主執行緒建立，事件迴圈也在主執行緒跑）；Windows 是系統匣
     if not serve_only and "tray" in features:
-        tray = start_tray(views.open, quit_event.set, mini)
+        tray = start_menubar(views.open, quit_event.set) if sys.platform == "darwin" else \
+            start_tray(views.open, quit_event.set, mini)
     if tray is not None and not webview:
         tray.notify(*NO_WEBVIEW_HINT)
     if tray is not None:
@@ -373,8 +394,11 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
             instance.write(port, token)
             if not hidden or tray is None:
                 views.open(mode)
-        while not quit_event.wait(0.5):
-            pass
+        if getattr(tray, "runs_main_loop", False):
+            tray.run(quit_event)                      # Mac：AppKit 的事件迴圈要在主執行緒
+        else:
+            while not quit_event.wait(0.5):
+                pass
     except KeyboardInterrupt:
         pass
     finally:

@@ -9,6 +9,9 @@ import { fromUnit, toUnit } from "../../lib/format";
 import type { MiniSettings, SettingsPayload, Unit } from "../../types";
 import { MiniSection } from "./MiniSection";
 
+// Mac 沒有系統匣，同一個設定是「選單列」（後端 menubar.py）；介面跟本體一定在同一台電腦上
+const IS_MAC = /Mac/.test(navigator.platform);
+
 type Bands = Record<string, [number, number]>;
 
 function round1(v: number): number {
@@ -187,7 +190,9 @@ export function SettingsDialog({ open, section, tray = true, mini: hasMini = tru
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={closeToTray} onChange={(e) => setCloseToTray(e.target.checked)}
                       className="size-4 accent-(--accent)" />
-                    留在系統匣繼續監控（圖示上的數字就是 CPU 溫度）
+                    {IS_MAC
+                      ? "留在選單列繼續監控（選單列上的數字就是 CPU 溫度）"
+                      : "留在系統匣繼續監控（圖示上的數字就是 CPU 溫度）"}
                   </label>
                 </>
               ) : null}

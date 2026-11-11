@@ -32,6 +32,14 @@
 
 技術說明、決策與進度見 [docs/SPEC.md](docs/SPEC.md)；給接手的 agent 看 [AGENTS.md](AGENTS.md)。
 
+## Mac（Apple 晶片，開發中）
+
+- 需要 macOS 11 以上的 Apple 晶片 Mac、Python 3.11 以上（`brew install python@3.12`）；第一次建置介面要 Node.js 20 以上。
+- `./run.sh`：開監控。第一次會建虛擬環境、裝套件、建置介面；已經開著就叫出原本的視窗。**一般權限就讀得到溫度**（SMC），不用驅動、不用 sudo。
+- `scripts/make-mac-app.sh`：在「應用程式」建好 `HWGlance.app`，之後從 Launchpad、Spotlight 打開或拖到 Dock；搬了資料夾就重跑一次。
+- 選單列上的數字就是 CPU 溫度（偏高變橘、過熱變紅），點開看每個溫度、開主畫面或結束；關掉視窗後還在選單列繼續監控。
+- 看得到 CPU、GPU、電池、內建 SSD 的溫度，風扇轉速、CPU／GPU 使用率與記憶體。事件記錄、迷你模式、暫存檔、時脈與功耗 Mac 版還沒有。
+
 ## 授權
 
 HWGlance 本身是 [MIT](LICENSE)。用到的第三方元件各有自己的授權，都不放在這個 repo 裡（第一次執行時從官方 release 下載、比對 SHA-256）：

@@ -59,7 +59,7 @@ export function TopBar({ snap, page, badge, onMini, onSettings }: {
 }) {
   const source = snap?.source;
   return (
-    <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 border-b border-line bg-surface">
+    <header data-titlebar className="app-topbar flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 border-b border-line bg-surface">
       <svg viewBox="0 0 32 32" className="size-6 shrink-0" aria-hidden>
         <circle cx="16" cy="16" r="12" fill="none" stroke="var(--track)" strokeWidth={5}
           strokeDasharray="56.5 75.4" transform="rotate(135 16 16)" strokeLinecap="round" />

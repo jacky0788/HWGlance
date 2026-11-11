@@ -1,2 +1,4 @@
 # Windows 批次檔一定要 CRLF：cmd.exe 讀 LF 的 .bat 時，goto 與標籤會錯亂
 *.bat text eol=crlf
+# Mac 的 shell 腳本一定要 LF：Windows 取出時轉成 CRLF，bash 會讀到 \r 而執行失敗
+*.sh text eol=lf

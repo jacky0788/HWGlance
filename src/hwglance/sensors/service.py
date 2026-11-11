@@ -102,6 +102,10 @@ class SensorService:
             tree = self._raw
         return next((t for hw in tree if hw.type == "Cpu" and (t := cpu_tjmax(hw)) is not None), None)
 
+    def roles(self) -> tuple[str, ...] | None:
+        """這台會出現的溫度種類（來源的 roles，Mac 才有）；設定頁只列這些門檻。None＝全部列（Windows）。"""
+        return tuple(getattr(self.source, "roles", ())) or None
+
     def disk_models(self) -> dict[str, str]:
         """{磁碟編號: 型號}（開啟後讀的規格）；事件記錄拿來把「硬碟 3」寫成型號。規格還沒讀到就是空的。"""
         with self._lock:

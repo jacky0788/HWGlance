@@ -30,6 +30,8 @@ VALID = (1.0, 150.0)                  # SMC 沒在用的鍵會回 0 或很怪的
 GIB = 1024 ** 3                       # 記憶體用 GiB（跟 LHM、活動監視器一樣，32 GB 的 Mac 顯示 32.0）
 GB = 1000 ** 3                        # 硬碟用十進位 GB（跟 LHM、Finder 一樣）
 LEVEL_NAMES = {"Super": "超級核", "Performance": "效能核", "Efficiency": "節能核"}
+# Mac 上會出現的溫度種類（thresholds.py）：設定頁只列這幾種的門檻，主機板、晶片組、機械硬碟這些 Mac 沒有
+MAC_ROLES = ("cpu", "gpu", "nvme", "battery")
 
 
 @dataclass(slots=True)
@@ -169,8 +171,9 @@ class MacSource:
     """真的 Mac。io 給測試換成假的（tests/test_mac.py）；預設是 macio。"""
 
     kind = "mac"
-    # 事件記錄、暫存檔、迷你模式、系統匣 Mac 版還沒有（第 2、3 段），畫面上就不出現那些分頁與按鈕
-    features: tuple[str, ...] = ()
+    # tray＝選單列（第 2 段，menubar.py）；事件記錄、暫存檔、迷你模式 Mac 版還沒有，畫面上就不出現那些分頁與按鈕
+    features: tuple[str, ...] = ("tray",)
+    roles = MAC_ROLES
 
     def __init__(self, io=None) -> None:
         if io is None:

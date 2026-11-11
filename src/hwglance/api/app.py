@@ -88,15 +88,19 @@ class SettingsBody(BaseModel):
     mini: dict | None = None                  # 同上
 
 
-def settings_payload(s: Settings, tjmax: float | None = None, mini: dict | None = None) -> dict:
+def settings_payload(s: Settings, tjmax: float | None = None, mini: dict | None = None,
+                     roles: tuple[str, ...] | None = None) -> dict:
     """tjmax：這台 CPU 的 TjMax（Intel 才知道）。CPU 門檻沒改過時，畫面上用的是照它算的（normalize._cpu），
-    設定頁也顯示同一組，「恢復預設」也回到這一組。mini：迷你模式的狀態 {fps: 讀不到的原因或 None, hotkeys}。"""
+    設定頁也顯示同一組，「恢復預設」也回到這一組。mini：迷你模式的狀態 {fps: 讀不到的原因或 None, hotkeys}。
+    roles：這台會出現的溫度種類（Mac 的 MAC_ROLES）：設定頁只列這些；bands 照樣全部給，存檔時沒列的不會被洗掉。"""
     mini = mini or {"fps": "這個模式沒有迷你模式", "hotkeys": []}
     defaults = {**DEFAULTS, "cpu": cpu_band(tjmax)}
     bands = s.merged_bands()
     if "cpu" not in s.bands:
         bands["cpu"] = defaults["cpu"]
     labels = {**LABELS, "cpu": f"CPU（TjMax {tjmax:g}°C）"} if tjmax else LABELS
+    if roles:
+        labels = {k: v for k, v in labels.items() if k in roles}
     return {
         "unit": s.unit,
         "interval": s.interval,
@@ -241,7 +245,8 @@ def create_app(service: SensorService, token: str | None = None,
 
     @app.get("/api/settings")
     def get_settings() -> JSONResponse:
-        return JSONResponse(settings_payload(store.get(), service.cpu_tjmax(), mini_state()), headers=NO_STORE)
+        return JSONResponse(settings_payload(store.get(), service.cpu_tjmax(), mini_state(), service.roles()),
+                            headers=NO_STORE)
 
     @app.put("/api/settings")
     def put_settings(body: SettingsBody) -> JSONResponse:
@@ -258,7 +263,7 @@ def create_app(service: SensorService, token: str | None = None,
             saved = store.update(**changes)
         except ValueError as e:
             return JSONResponse({"detail": str(e)}, status_code=400)
-        return JSONResponse(settings_payload(saved, tjmax, mini_state()), headers=NO_STORE)
+        return JSONResponse(settings_payload(saved, tjmax, mini_state(), service.roles()), headers=NO_STORE)
 
     @app.post("/api/ui/open")
     def ui_open(body: OpenRequest) -> dict:

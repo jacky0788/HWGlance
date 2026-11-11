@@ -226,7 +226,7 @@ def test_service_snapshot_carries_features_and_no_windows_hints():
     assert service.open()
     service.tick()
     source = service.snapshot()["source"]
-    assert source["kind"] == "mac" and source["features"] == []
+    assert source["kind"] == "mac" and source["features"] == ["tray"]   # 選單列（第 2 段）
     assert source["notes"] == ["讀取失敗：GPU 使用率：找不到 GPU（IOAccelerator）"]   # 不提 PawnIO、系統管理員
     assert system.hints("mac", False, None) == []
     windows = SensorService(DemoSource(seed=1), env=ENV).snapshot()["source"]
@@ -238,7 +238,7 @@ def test_mac_demo_has_the_same_shape_as_the_real_mac():
     snap = normalize(demo.read())
     assert [d["kind"] for d in snap["devices"]] == ["cpu", "gpu", "board", "memory", "storage"]
     assert [t["label"] for t in snap["overview"]] == ["CPU", "GPU 核心", "電池", "APPLE SSD AP1024Z"]
-    assert demo.features == () and demo.gpu_processes is None
+    assert demo.features == ("tray",) and demo.gpu_processes is None
     service = SensorService(demo, env=ENV)
     service.tick()
-    assert service.details(GPU_ID) is not None and service.snapshot()["source"]["features"] == []
+    assert service.details(GPU_ID) is not None and service.snapshot()["source"]["features"] == ["tray"]

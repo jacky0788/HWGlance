@@ -16,8 +16,10 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 
 **Mac 版（2026-11-11 起，`feat/macos` 分支，分段做，SPEC 的「Mac 版」與 M1…）**：Apple 晶片一般權限就讀得到——SMC 的溫度與風扇、
 HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctypes），`sensors/mac.py` 整理成跟 LHM 一樣的硬體樹，後面全部照用。
-第 1 段（讀數＋即時監控頁）做完；選單列圖示、App 包裝、Mac 外觀是第 2 段，當機報告是第 3 段。Mac 版沒有的功能靠快照的
-`source.features`（`service.ALL_FEATURES`）藏起來：Mac 現在是空的，事件記錄、暫存檔、迷你模式、系統匣、記憶體組成、關閉程式都不開。
+第 1 段（讀數＋即時監控頁）、第 2 段（選單列 `menubar.py`、`HWGlance.app`、視窗的 Mac 外觀）做完，當機報告是第 3 段。
+Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執行緒跑 AppKit 的事件迴圈；視窗程序照舊另開。Mac 版沒有的功能靠快照的
+`source.features`（`service.ALL_FEATURES`）藏起來：Mac 只有 `tray`（＝選單列），事件記錄、暫存檔、迷你模式、記憶體組成、關閉程式都不開；
+設定頁的門檻只列來源的 `roles`（`mac.MAC_ROLES`）。**配色、版面照 Windows 版**（使用者定過的，SPEC D22、D28），Mac 只改視窗外框與字型。
 
 ## 程式在哪裡
 
@@ -38,7 +40,8 @@ HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctyp
 | `src/hwglance/settings.py` | 設定 `data/settings.json`：單位、更新頻率、關視窗留在系統匣、門檻、卡片顏色（門檻與顏色只存改過的）；壞掉就用預設 |
 | `src/hwglance/core.py` | 本體：服務＋伺服器＋系統匣＋主畫面的視窗控制（`Window`：開、叫到前面、排指令、結束）＋主畫面與迷你模式二選一（`Views`）、套用設定、選埠 |
 | `src/hwglance/tray.py` | 系統匣（pystray＋Pillow）：圖示畫 CPU 溫度、提示文字、右鍵選單；畫圖與文字是純函式 |
-| `src/hwglance/ui.py` | 主畫面的視窗程序（pywebview）：只有主畫面（`UiApp.switch` 叫出來）、長輪詢本體指令（`poll_commands`） |
+| `src/hwglance/menubar.py` | Mac 的選單列（系統匣的 Mac 版，PyObjC）：選單列寫 CPU 溫度（偏高橘、過熱紅）、選單列出總覽每個溫度＋開啟主畫面＋結束；設成輔助程式（不在 Dock）、當 App 的委派接「重新打開」（再開一次 HWGlance.app → 開主畫面）；`run()` 在主執行緒跑事件迴圈到 `quit_event`（自己 `NSApp.stop`＋空事件，**不用** AppHelper 的 stopEventLoop：它會改叫 terminate，收尾不會跑）。文字是純函式（`tests/test_menubar.py`） |
+| `src/hwglance/ui.py` | 主畫面的視窗程序（pywebview）：只有主畫面（`UiApp.switch` 叫出來）、長輪詢本體指令（`poll_commands`）。Mac：網址帶 `?shell=mac&titlebar=&lights=`（量好的標題列高度、紅黃綠按鈕寬度）、`mac_window` 標題列透明＋內容延伸到標題列下＋不顯示標題字、`MacShell`（js_api，網頁回報頂端列多高、按鈕在哪）＋換掉 WKWebView 的 mouseDown（頂端列空白處拖曳、連按兩下照系統設定）、`mac_identity`（從終端機開時選單列寫 HWGlance） |
 | `src/hwglance/mini/` | 迷你模式（SPEC D29）：`items.py` 能顯示什麼、從快照怎麼拿值（純函式）、`render.py` 用 Pillow 畫成有透明度的圖（顏色照 tokens.css 深色，`tests/test_mini.py` 會比對）、`window.py` Win32 分層視窗（自己的執行緒＋訊息迴圈、每個螢幕的 DPI、拖曳、雙擊、右鍵選單、鎖定＝滑鼠穿透，位置記在 `data/mini.json`）、`__init__.py` 的 `MiniMode` 接起來 |
 | `src/hwglance/fps.py` | 遊戲 FPS：跑 PresentMon（`vendor/presentmon`）讀 CSV，前景程式最近 1 秒的 FPS、幀時間、10 秒的 1% Low；只在迷你模式開著、有勾 FPS 時才跑；`DemoFps` 示範用；`tests/test_fps.py` 用假的輸出測 |
 | `src/hwglance/processes.py` | 關閉別的程式（SPEC D31，顯存排行旁的「關閉」）：`Offers`（只收自己列出來的 pid＋啟動時間）、`protected_reason`（系統程式、服務、關鍵程式、自己不給關）、`pick_target`（沒視窗的子程式只往上找同一個執行檔，WebView2 到用它的程式）、`WindowsProcesses`（WM_CLOSE 好好關／TerminateProcess 強制結束、寫 `data/actions.log`）、`DemoProcesses`（示範資料一律用這個）；`tests/test_processes.py` |
@@ -52,6 +55,8 @@ HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctyp
 | `scripts/fetch_presentmon.py` | 從官方 release 取 PresentMon 2.6.0 命令列版（比對 GitHub 公布的 SHA-256）＋LICENSE、THIRD_PARTY，放到 `vendor/presentmon/`（不進 git；`setup.bat` 第一次會跑，失敗只是沒有 FPS） |
 | `scripts/build_portable.py` | 產生可攜版 `build/HWGlance-版本-portable-win64.zip`（SPEC D27）：python.org 嵌入版 Python（跟 venv 同版、比對 SHA-256，`EMBED` 表）＋執行用套件（版本照 venv）＋src、vendor/lhm、frontend/dist、`HWGlance.bat`、`probe.bat`、使用說明與第三方授權；`--no-zip` 只產生資料夾。`build/` 不進 git |
 | `scripts/make_icon.py`、`make-shortcut.ps1` | 產生 `assets/app.ico`（弧形儀表，跟介面 logo 一樣）；建立桌面捷徑 `HWGlance.lnk`（指向 `run.bat`、最小化啟動） |
+| `run.sh`、`scripts/make-mac-app.sh`、`scripts/make_mac_icon.py` | Mac：`run.sh` 是 run.bat 的 Mac 版（venv、套件、介面、已經開著就叫出來；`--wait` 給 App 用：本體與視窗程序都用 App 裡指向 Python 的連結跑，系統才當成 HWGlance）；`make-mac-app.sh` 建 `~/Applications/HWGlance.app`（識別碼 `com.jacky0788.hwglance`，只換掉自己建的）；`make_mac_icon.py` 產生 `assets/app-mac.png`、`assets/AppIcon.icns`（同一個儀表，照 macOS 圖示格線）。`.sh` 在 `.gitattributes` 固定 LF |
+| `frontend/src/lib/macShell.ts` | Mac 視窗（`?shell=mac`）：`<html data-shell="mac">`、`--titlebar-h`、`--lights-w`（用「幾個 1px」，這個專案的根字級不是 16 像素）；盯著 `<header data-titlebar>` 回報頂端列高度與按鈕位置給 `window.pywebview.api.drag_region` |
 | `docs/images/dashboard.webp` | ProjectHub 卡片的封面（示範資料的主畫面截圖，16:10） |
 | ProjectHub 的 `registry/hwglance/project.toml` | 登錄到 ProjectHub（只有「啟動」一個按鈕）；要改照 ProjectHub 的 `docs/SOP-edit-project.md` |
 | `frontend/src/pages/` | `Dashboard.tsx` 主畫面（即時監控，`#live`）、`Events.tsx` 事件記錄頁（`#events`）、`Temp.tsx` 暫存檔頁（`#temp`，掃描、刪除、被鎖住的程式；`App.tsx` 的 `usePage` 看網址切換），只負責排版；迷你模式不是網頁（後端 `mini/`），「迷你模式」按鈕是叫 `POST /api/ui/open` |
@@ -104,7 +109,8 @@ HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctyp
 | 改介面時預覽 | `F:\Desktop\claude_project\.claude\launch.json` 的 `hwglance-demo`（埠 8797，示範資料，設定存在 `data/demo`；它是 `--serve`，沒有迷你模式） |
 | 看顯示卡重設時的畫面 | launch.json 的 `hwglance-demo-gpu-reset`（埠 8798，`--demo-gpu-reset 15`：開啟 15 秒後模擬一次，約 1 分鐘後重新連上） |
 | 看別種電腦的畫面 | launch.json 的 `hwglance-demo-intel`（埠 8799，`--demo-profile intel-laptop`）；Mac 的畫面 `--demo-profile mac` |
-| Mac 上開（第 1 段，還沒有 App） | 第一次：`python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt`、`cd frontend && npm ci && npm run build`（node 在 `/opt/homebrew/opt/node@22/bin`）；之後 `.venv/bin/python -m hwglance`（視窗）或 `--serve`（瀏覽器）。一般權限就好，不用 sudo |
+| Mac 上開 | `./run.sh`（第一次會建 venv、裝套件、建介面）；App：`scripts/make-mac-app.sh` 建 `~/Applications/HWGlance.app`。一般權限就好，不用 sudo。開發時也可以 `.venv/bin/python -m hwglance`（視窗＋選單列）或 `--serve`（瀏覽器） |
+| agent 在 Mac 上開 App 測 | `open --env HWGLANCE_DATA=<暫存資料夾> ~/Applications/HWGlance.app`（設定、log、黑盒子都進那裡；已經開著時 `--env` 不會生效），用 `POST /api/app/quit` 結束，結束後 `instance.json` 應該被刪掉 |
 | Mac 上測 | `.venv/bin/python -m pytest`（Windows 才有的 8 項會跳過）；agent 自己開的要加 `--data <暫存資料夾>`，用 `POST /api/app/quit` 結束 |
 | 給另一台電腦 | `.venv\Scripts\python.exe scripts\build_portable.py` → `build\` 裡的 zip；改了程式或介面要重新產生（介面先 `npm run build`） |
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
@@ -119,7 +125,11 @@ HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctyp
   列鍵 26 ms、讀 51 個鍵 7 ms，整輪約 9 ms。Apple 沒公開鍵的意思，每代晶片不一樣（M3 用 Tf），別台 Mac 沒驗過。
 - HID 溫度感測器 47 個（PMU tdie…、NAND CH0 temp、gas gauge battery），名稱沒分 CPU／GPU，所以只拿 NAND 當 SSD 溫度。
 - 一般權限讀不到時脈與功耗：要 IOReport（私有框架）或 `powermetrics`（要 sudo），還沒做。
-- pywebview 在 Mac 走 Cocoa＋WKWebView；視窗程序在 Dock 顯示成「Python」（第 2 段做 App 包裝）。沒有系統匣時關掉視窗就整個結束。
+- pywebview 在 Mac 走 Cocoa＋WKWebView。從 HWGlance.app 開時兩個程序都是 HWGlance（`lsappinfo`：本體 type＝UIElement、視窗 Foreground）；
+  從終端機開的視窗程序 Dock 上還是 Python 的圖示（`mac_identity` 只改得了選單列的名稱與圖示）。
+- Python 一啟動就把 `__PYVENV_LAUNCHER__` 從環境變數拿掉：本體開視窗程序時要再帶一次（`core.Window._spawn_process`），不然視窗程序找不到 .venv。
+- macOS 27 的標題列 32 點、紅黃綠按鈕右邊到 68 點左右（比以前大），所以用量的、不寫死。
+- macOS 27 的選單列項目不是 App 自己的視窗（由 MenuBarAgent 代管），`CGWindowListCopyWindowInfo` 看不到；要驗證就在自己的程序裡建一個、把按鈕畫成圖（暫存區的檢查腳本做過）。
 - Mac 的 Python 用 Homebrew 的 python@3.12（`/opt/homebrew/bin/python3.12`），不是 Windows 的 3.14。
 - agent 截不到別的程式的視窗（沒有螢幕錄製權限）：看畫面用 `--serve` 開在內建瀏覽器；確認視窗有出來用 `CGWindowListCopyWindowInfo`（看得到位置與大小）。
 

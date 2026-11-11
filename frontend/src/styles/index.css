@@ -20,8 +20,9 @@
   --color-hot: var(--hot);
   --color-hot-soft: var(--hot-soft);
   --color-none: var(--none);
+  /* Mac 沒有 Segoe、微軟正黑體：-apple-system＝舊金山字型（SF Pro），中文接蘋方 */
   --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI", "Microsoft JhengHei",
-    "Yu Gothic UI", "PingFang TC", system-ui, sans-serif;
+    "Yu Gothic UI", -apple-system, BlinkMacSystemFont, "PingFang TC", system-ui, sans-serif;
 }
 
 html,
@@ -42,6 +43,18 @@ body {
 :focus-visible {
   outline: 0.125rem solid var(--focus);
   outline-offset: 0.125rem;
+}
+
+/* Mac 的桌面視窗（lib/macShell.ts 標 data-shell="mac"）：標題列透明，頂端列就是標題列——跟它一樣高，
+   左邊空出紅黃綠按鈕的位置，裡面的東西垂直置中、跟按鈕對齊。不放在 @layer 裡，才蓋得過 Tailwind 的 py-3、px-5。
+   拖曳、連按兩下縮放由視窗程序做（ui.py），網頁只回報按鈕在哪 */
+[data-shell="mac"] .app-topbar {
+  min-height: var(--titlebar-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: calc(var(--lights-w) + 0.75rem);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* 數字等寬，每秒更新時不會左右跳 */

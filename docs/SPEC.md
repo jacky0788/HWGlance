@@ -414,9 +414,31 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
   MacDemo；全部假讀數，Windows 也能跑）、`npm run build` 通過；真機 `--serve` 用瀏覽器看過總覽、卡片、CPU 詳細資訊、設定頁；
   桌面視窗（pywebview＋WKWebView）開得起來、用 `/api/app/quit` 結束後程序收乾淨、黑盒子有寫檔。
 
+### Mac 版第 2 段：選單列、App 包裝、Mac 外觀（2026-11-11，M5～M8）
+
+使用者說「開始做第 2 段」。
+
+| # | 決策 | 原因 |
+|---|---|---|
+| M5 | 系統匣在 Mac 是選單列（`menubar.py`，PyObjC 的 NSStatusItem，不用 pystray）：選單列上直接寫「41°」（SF 等寬數字、溫度計圖示），偏高橘、過熱紅、正常照選單列本來的顏色；選單列出總覽每個溫度＋開啟主畫面＋結束。本體設成輔助程式（不在 Dock），主執行緒跑 AppKit 事件迴圈；「關掉視窗時留在選單列」照舊是設定（`closeToTray`） | Mac 選單列 App（iStat Menus、Stats）的慣例是寫字不是畫圖；pystray 在 Mac 要佔主執行緒、選單列只能放圖 |
+| M6 | App 包裝：`scripts/make-mac-app.sh` 建 `~/Applications/HWGlance.app`（launcher → `run.sh --wait`），本體與視窗程序都用 App 裡指向 Python 的連結跑（`__PYVENV_LAUNCHER__` 帶 .venv，開視窗程序時要再帶一次）→ 兩個程序都是 HWGlance、用 HWGlance 的圖示；再打開一次 App＝系統叫本體「重新打開」→ 開主畫面 | 不打包 Python（跟 Windows 一樣用 .venv），改程式不用重建 App |
+| M7 | 視窗的 Mac 外觀：標題列透明、內容延伸到標題列下、不顯示標題字；網頁頂端列跟標題列一樣高、左邊空出紅黃綠按鈕（高度與寬度由視窗程序量好帶在網址）；頂端列空白處拖曳、連按兩下照系統設定（網頁回報按鈕位置，按鈕照常能按）；字型加 SF（`-apple-system`）。**配色、版面不動**（D22、D28 使用者定過的） | 跟 Finder、備忘錄同一種視窗；HWGlance 的深色儀表板本來就是它的樣子 |
+| M8 | 設定頁的門檻只列這台有的種類：來源的 `roles`（Mac 是 CPU、GPU、NVMe、電池），bands 照樣全部給、存檔不洗掉 | 主機板、晶片組、機械硬碟這些 Mac 沒有，列著只會讓人困惑 |
+
+- 圖示：`scripts/make_mac_icon.py` 用 Windows 圖示同一個儀表，照 macOS 格線（1024 畫布、824 圓角方塊、陰影、上淺下深），iconutil 包成 `assets/AppIcon.icns`。
+- 踩到的：①Python 一啟動就把 `__PYVENV_LAUNCHER__` 拿掉，視窗程序第一次開不起來（No module named hwglance）→ 開視窗程序時再帶一次。
+  ②`AppHelper.stopEventLoop` 找不到自己的迴圈時改叫 `terminate`，程序直接結束、`instance.json` 沒刪、黑盒子沒寫完 → 自己 `NSApp.stop`＋空事件。
+  ③macOS 27 的標題列 32 點、紅黃綠按鈕比以前大；專案根字級不是 16 像素，用 rem 換算會差 4 點 → 用量的、用「幾個 1px」。
+  ④macOS 27 的選單列項目由 MenuBarAgent 代管，看不到 App 自己的視窗。
+- 驗證：pytest 177 項（新增 `tests/test_menubar.py` 5 項：選單列文字、選單、設定頁只列 Mac 的門檻、視窗網址與拖曳範圍、視窗程序用 App 的 Python）、
+  `npm run build` 通過。真機：`open --env HWGLANCE_DATA=<暫存>` 開 App → `lsappinfo` 兩個都是 HWGlance（本體 UIElement、視窗 Foreground）；
+  關掉視窗本體留在選單列、再開一次 App 叫回主畫面；`/api/app/quit` 後全部結束、`instance.json` 刪掉、log 沒有錯誤。
+  選單列與視窗用暫存區的檢查腳本在自己的程序裡驗：選單列項目可見、「93°」橘色、選單 7 行；視窗截圖紅黃綠按鈕、logo、「設定」對齊，
+  假滑鼠事件：頂端列空白處連按兩下會縮放、「設定」上連按兩下不會。**沒有實際用滑鼠點選單列**（agent 沒有輔助使用權限）。
+
 ## 還沒做／待確認
 
-- Mac 第 2 段：選單列圖示（顯示 CPU 溫度）、記憶庫.app 那種 App 包裝（Dock 現在顯示 Python）、Mac 外觀；設定頁的門檻只列 Mac 有的種類；`run.sh`。
+- Mac 第 2 段的選單列：使用者自己點一次（字、顏色、選單、「開啟主畫面」「結束」）；第一次關視窗的通知沒看過。
 - Mac 第 3 段：當機（panic）報告、上次關機原因（事件記錄頁）。
 - Mac 之後：CPU／GPU 的時脈與功耗（IOReport）；GPU 門檻照真機調；其他 Apple 晶片（M3 的 SMC 用 Tf）沒有真機驗。
 - 合併：家用機 11-07 的 D34～D36 推上去後，跟 `feat/macos` 合併（`normalize.py`、`details.py`、`format.ts`、`tests/test_blackbox.py` 兩邊都有改）。

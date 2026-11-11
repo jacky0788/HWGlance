@@ -436,7 +436,8 @@ class MacDemo(DemoSource):
     GPU 18 個、電池 3 個、1 個風扇且閒置時停轉）、12 核心（2 超級核＋4 效能核＋6 節能核）、32 GB、1 TB SSD。
     硬體樹跟真的 Mac 一樣走 mac.build_tree；沒有顯存排行、事件記錄、暫存檔、迷你模式（Mac 版還沒有）。"""
 
-    features: tuple[str, ...] = ()
+    features: tuple[str, ...] = ("tray",)                # 跟真的 Mac 一樣（mac.MacSource）
+    roles = ("cpu", "gpu", "nvme", "battery")            # mac.MAC_ROLES
     gpu_processes = None                         # Apple 晶片沒有顯存，不列「顯存被誰佔用」
     P_POINTS, E_POINTS, G_POINTS, CORES = 21, 9, 18, 12
 
