@@ -159,6 +159,53 @@ def memory_used(pages: dict[str, int]) -> int:
     return (app + pages["wired"] + pages["compressed"]) * pages["page"]
 
 
+# ---- 記憶體的組成與壓力（/api/memory；畫面是 Windows 那條組成長條，SPEC M14） ----
+# 名稱照「活動監視器」：App 記憶體、聯動、已壓縮、快取的檔案；鍵沿用 Windows 的（used、compressed、standby、free），
+# 聯動（wired）是 Mac 才有的。順序就是長條由左到右
+MAC_SEGMENTS = (
+    ("used", "App 記憶體", "程式在用的（活動監視器的「App 記憶體」）"),
+    ("wired", "聯動", "系統核心與驅動鎖住的，不能壓縮、也不能挪給別的程式"),
+    ("compressed", "已壓縮", "macOS 把暫時沒在用的記憶體壓縮起來放在這裡，比寫到 SSD 快；括號裡是壓縮前有多少"),
+    ("standby", "快取的檔案", "最近讀過的檔案，留著下次用比較快；程式要用時馬上可以挪用，所以也算「可用」"),
+    ("free", "空著", "沒有任何東西"),
+)
+# kern.memorystatus_vm_pressure_level：1 正常、2 警告、4 嚴重（跟活動監視器「記憶體壓力」的綠黃紅一樣）
+PRESSURE_LEVELS = {1: "normal", 2: "warn", 4: "critical"}
+
+
+def mac_memory_status(pages: dict[str, int], total: int, pressure: int | None, free_percent: int | None) -> dict:
+    """vm_statistics64 的頁數＋總量＋壓力 → /api/memory 的內容（跟 Windows 的 memory.compose 同一個形狀，多了 pressure）。"""
+    page = pages["page"]
+    app = max(0, pages["internal"] - pages["purgeable"]) * page
+    wired, compressed = pages["wired"] * page, pages["compressed"] * page
+    cached = (pages.get("external", 0) + pages["purgeable"]) * page
+    free = max(0, total - app - wired - compressed - cached)
+    values = {"used": app, "wired": wired, "compressed": compressed, "standby": cached, "free": free}
+    return {
+        "total": total, "available": max(0, total - app - wired - compressed),   # 快取的檔案＋空著
+        "segments": [{"key": k, "label": label, "note": note, "bytes": values[k]} for k, label, note in MAC_SEGMENTS],
+        "compression": {"enabled": True, "bytes": compressed, "stored": pages.get("stored", 0) * page},
+        "canPurge": False, "canRelease": False, "last": None,
+        "pressure": {"level": PRESSURE_LEVELS.get(int(pressure or 0)), "free": free_percent},
+    }
+
+
+class MacMemory:
+    """Mac 的記憶體組成（只讀）。沒有「釋放記憶體」：macOS 自己會壓縮、挪用，硬清反而讓程式要重新載入。"""
+
+    def __init__(self, io) -> None:
+        self.io = io
+
+    def status(self) -> dict:
+        io = self.io
+        return mac_memory_status(io.memory_pages(), int(io.sysctl_int("hw.memsize") or 0),
+                                 io.sysctl_int("kern.memorystatus_vm_pressure_level"),
+                                 io.sysctl_int("kern.memorystatus_level"))
+
+    def release(self) -> dict:
+        raise RuntimeError("Mac 的記憶體由系統自己管，不需要釋放")
+
+
 def cpu_loads(prev: list[tuple[int, ...]] | None, now: list[tuple[int, ...]]) -> list[float] | None:
     """兩次 (user, system, idle, nice) 相減 → 每個核心的使用率 %。計數器是 32 位元，繞回去也算得對。"""
     if prev is None or len(prev) != len(now):
@@ -252,8 +299,9 @@ class MacSource:
     """真的 Mac。io 給測試換成假的（tests/test_mac.py）；預設是 macio。"""
 
     kind = "mac"
-    # tray＝選單列（第 2 段，menubar.py）、events＝事件記錄（第 3 段，events/mac.py）；暫存檔、迷你模式 Mac 版沒有
-    features: tuple[str, ...] = ("tray", "events")
+    # tray＝選單列（第 2 段，menubar.py）、events＝事件記錄（第 3 段，events/mac.py）、memory＝記憶體組成與壓力（只讀，
+    # 沒有釋放）；暫存檔、迷你模式、關閉程式 Mac 版沒有
+    features: tuple[str, ...] = ("tray", "events", "memory")
     roles = MAC_ROLES
 
     def __init__(self, io=None) -> None:
@@ -366,6 +414,10 @@ class MacSource:
 
     def specs(self) -> dict:
         return self._specs
+
+    def memory_tool(self) -> MacMemory:
+        """core.run 給 /api/memory 用的。"""
+        return MacMemory(self.io)
 
     def close(self) -> None:
         for part in (self._smc, self._hid, self._gpu, self._ior):

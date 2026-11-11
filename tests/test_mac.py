@@ -253,7 +253,7 @@ def test_service_snapshot_carries_features_and_no_windows_hints():
     assert service.open()
     service.tick()
     source = service.snapshot()["source"]
-    assert source["kind"] == "mac" and source["features"] == ["tray", "events"]   # 選單列（第 2 段）、事件記錄（第 3 段）
+    assert source["kind"] == "mac" and source["features"] == ["tray", "events", "memory"]   # 選單列、事件記錄、記憶體組成（只讀）
     assert source["notes"] == ["讀取失敗：GPU 使用率：找不到 GPU（IOAccelerator）"]   # 不提 PawnIO、系統管理員
     assert system.hints("mac", False, None) == []
     windows = SensorService(DemoSource(seed=1), env=ENV).snapshot()["source"]
@@ -265,10 +265,10 @@ def test_mac_demo_has_the_same_shape_as_the_real_mac():
     snap = normalize(demo.read())
     assert [d["kind"] for d in snap["devices"]] == ["cpu", "gpu", "board", "memory", "storage"]
     assert [t["label"] for t in snap["overview"]] == ["CPU", "GPU 核心", "電池", "APPLE SSD AP1024Z"]
-    assert demo.features == ("tray", "events") and demo.gpu_processes is None
+    assert demo.features == ("tray", "events", "memory") and demo.gpu_processes is None
     service = SensorService(demo, env=ENV)
     service.tick()
-    assert service.details(GPU_ID) is not None and service.snapshot()["source"]["features"] == ["tray", "events"]
+    assert service.details(GPU_ID) is not None and service.snapshot()["source"]["features"] == ["tray", "events", "memory"]
 
 
 def test_clock_from_performance_state_residency():
@@ -301,3 +301,36 @@ def test_clock_and_power_on_the_cards():
     assert clock_rows == {"平均時脈": 1627, "超級核時脈": 1788, "節能核時脈": 1588}
     body = device_details(tree, snap, BOARD_ID, {})
     assert any(row["label"] == "整機功耗" for sec in body["sections"] for row in sec.get("rows") or [])
+
+
+def test_memory_composition_and_pressure_like_activity_monitor():
+    """數字照 2026-11-11 那台 M6 同一時間的 vm_stat（App 11.32、聯動 3.94、已壓縮 8.59 裡是 17.49 GiB、快取的檔案 6.93＋0.21）。"""
+    from hwglance.sensors.mac import MacMemory, mac_memory_status
+    gib, page = 2**30, 16384
+    pages = {"internal": round(11.53 * gib / page), "purgeable": round(0.21 * gib / page), "wired": round(3.94 * gib / page),
+             "compressed": round(8.59 * gib / page), "external": round(6.93 * gib / page),
+             "stored": round(17.49 * gib / page), "page": page}
+    st = mac_memory_status(pages, 32 * gib, 1, 59)
+    seg = {s["key"]: round(s["bytes"] / gib, 2) for s in st["segments"]}
+    assert seg == {"used": 11.32, "wired": 3.94, "compressed": 8.59, "standby": 7.14, "free": 1.01}
+    assert [s["label"] for s in st["segments"]] == ["App 記憶體", "聯動", "已壓縮", "快取的檔案", "空著"]
+    assert round(st["available"] / gib, 2) == 8.15 and round(st["compression"]["stored"] / gib, 2) == 17.49
+    assert st["pressure"] == {"level": "normal", "free": 59} and st["canRelease"] is False
+    assert mac_memory_status(pages, 32 * gib, 4, 5)["pressure"]["level"] == "critical"
+    assert mac_memory_status(pages, 32 * gib, None, None)["pressure"] == {"level": None, "free": None}
+    with pytest.raises(RuntimeError):
+        MacMemory(None).release()                                         # Mac 沒有釋放記憶體
+
+
+def test_mac_memory_api(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from hwglance.api.app import create_app
+    monkeypatch.setenv("HWGLANCE_DATA", str(tmp_path))
+    demo = MacDemo(seed=1)
+    service = SensorService(demo, env=ENV)
+    service.tick()
+    client = TestClient(create_app(service, "t", memory=demo.memory_tool()), base_url="http://127.0.0.1:8796")
+    st = client.get("/api/memory").json()
+    assert st["pressure"]["level"] == "normal" and [s["key"] for s in st["segments"]][1] == "wired"
+    r = client.post("/api/memory/release", headers={"x-hwglance-token": "t"})
+    assert r.status_code == 429 and "系統自己管" in r.json()["detail"]

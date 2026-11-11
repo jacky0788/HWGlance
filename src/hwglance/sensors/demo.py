@@ -436,7 +436,7 @@ class MacDemo(DemoSource):
     GPU 18 個、電池 3 個、1 個風扇且閒置時停轉）、12 核心（2 超級核＋4 效能核＋6 節能核）、32 GB、1 TB SSD。
     硬體樹跟真的 Mac 一樣走 mac.build_tree；沒有顯存排行、事件記錄、暫存檔、迷你模式（Mac 版還沒有）。"""
 
-    features: tuple[str, ...] = ("tray", "events")      # 跟真的 Mac 一樣（mac.MacSource）
+    features: tuple[str, ...] = ("tray", "events", "memory")   # 跟真的 Mac 一樣（mac.MacSource）
     roles = ("cpu", "gpu", "nvme", "battery")            # mac.MAC_ROLES
     gpu_processes = None                         # Apple 晶片沒有顯存，不列「顯存被誰佔用」
     P_POINTS, E_POINTS, G_POINTS, CORES = 21, 9, 18, 12
@@ -489,6 +489,30 @@ class MacDemo(DemoSource):
         return {"cpu": {"cores": self.CORES, "threads": self.CORES, "layout": "2 超級核＋4 效能核＋6 節能核"},
                 "gpus": {"Apple M6 GPU": {"cores": 12}},
                 "disks": {"0": {"model": "APPLE SSD AP1024Z", "firmware": "3975.40.", "bus": "Apple Fabric（內建）"}}}
+
+    def memory_tool(self):
+        """記憶體組成與壓力（mac.MacMemory）：照卡片上的已用算，組成比例照那台 M6 的實測（聯動約 4 GB、已壓縮約佔已用的三成五）。"""
+        from .mac import MacMemory
+        return MacMemory(_MacDemoMemoryIo(self))
+
+
+class _MacDemoMemoryIo:
+    PAGE, TOTAL = 16384, 32 * 2**30
+
+    def __init__(self, demo: MacDemo) -> None:
+        self.demo = demo
+
+    def memory_pages(self) -> dict[str, int]:
+        used = (18 + 6 * self.demo._v["cpu_load"]) * 2**30
+        wired, compressed = 4 * 2**30, 0.35 * used
+        app = used - wired - compressed
+        page = self.PAGE
+        return {"internal": int(app / page), "purgeable": 0, "wired": int(wired / page),
+                "compressed": int(compressed / page), "external": int(7 * 2**30 / page),
+                "stored": int(2 * compressed / page), "page": page}
+
+    def sysctl_int(self, name: str) -> int | None:
+        return {"hw.memsize": self.TOTAL, "kern.memorystatus_vm_pressure_level": 1, "kern.memorystatus_level": 60}.get(name)
 
 
 PROFILES = {"this-pc": DemoSource, "intel-laptop": IntelLaptopDemo, "mac": MacDemo}

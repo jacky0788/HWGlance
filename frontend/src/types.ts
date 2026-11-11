@@ -184,7 +184,7 @@ export interface ClosePlan {
 }
 
 // GET /api/memory：記憶體的組成（memory.py；各段加起來＝total）
-export type MemorySegmentKey = "used" | "compressed" | "modified" | "standby" | "free";
+export type MemorySegmentKey = "used" | "compressed" | "modified" | "standby" | "free" | "wired"; // wired：Mac 的聯動
 
 export interface MemoryRelease {
   before: number; // 「可用」之前／之後（位元組）
@@ -203,9 +203,12 @@ export interface MemoryStatus {
   total: number;
   available: number;
   segments: { key: MemorySegmentKey; label: string; note: string; bytes: number }[];
-  compression: { enabled: boolean; bytes: number };
+  compression: { enabled: boolean; bytes: number; stored?: number }; // stored：Mac 壓縮前有多少
   canPurge: boolean; // 清待命快取要系統管理員
+  canRelease?: boolean; // false：沒有「釋放記憶體」（Mac）；Windows 沒給＝有
   last: MemoryRelease | null;
+  // Mac 才有：記憶體壓力（活動監視器的綠黃紅）、系統還剩幾 %（sensors/mac.py 的 mac_memory_status）
+  pressure?: { level: "normal" | "warn" | "critical" | null; free: number | null };
 }
 
 // POST /api/temp/scan：暫存資料夾的掃描結果（tempfiles.py）。只管放超過 1 天的檔；動作只收 id（不收路徑）

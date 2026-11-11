@@ -476,6 +476,19 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
 - 驗證：pytest 186 項（`tests/test_mac.py` 新增時脈計算、卡片與詳細資訊、假的 IOReport）、`npm run build` 通過；真機 `--serve` 看過卡片（CPU 2.5 GHz、GPU 503 MHz／0.3 W）與詳細資訊。
   前端 `format.ts` 的 W 有小數才寫小數（Windows 給整數，照舊）。
 
+### Mac：記憶體壓力與組成（2026-11-11，M14）
+
+使用者請我檢查記憶體使用率有沒有算錯：同一時間對照 vm_stat、top、memory_pressure，**數字沒錯**——HWGlance 的 23.85 GiB（74.5%）
+跟活動監視器「使用中的記憶體」（App＋聯動＋已壓縮）、Stats App 的算法完全一樣；`top` 的 31G 多算了快取的檔案。看起來偏高是已壓縮
+佔 8.59 GiB（裡面是 17.49 GiB 的資料），記憶體壓力其實正常（memory_pressure 剩 59%、沒有交換空間）。使用者說「加上記憶體壓力」。
+
+| # | 決策 | 原因 |
+|---|---|---|
+| M14 | 記憶體卡片沿用 Windows 的組成長條（`/api/memory`，`mac.MacMemory`、`mac_memory_status`）：App 記憶體、聯動、已壓縮（括號是壓縮前）、快取的檔案、空著，名稱照活動監視器；上面加一行「記憶體壓力」（`kern.memorystatus_vm_pressure_level` 1／2／4＝正常／偏高／很高，綠黃紅），旁邊是系統還剩幾 %（`kern.memorystatus_level`，跟 memory_pressure 一樣）；**沒有釋放按鈕**（`canRelease: false`，API 回 429） | 活動監視器判斷夠不夠用看壓力不是百分比；macOS 自己會壓縮、挪用，硬清反而要重新載入 |
+
+- 鍵沿用 Windows 的（used、compressed、standby、free），只有聯動（`wired`）是新的，顏色 `--mem-wired` 跟 Windows 的待寫回一樣（兩個不會同時出現）。
+- 驗證：pytest 188 項（`tests/test_mac.py` 加組成與壓力、API）、`npm run build` 通過；真機看過卡片（壓力正常 59%、App 11.6／聯動 3.9／已壓縮 8.5（17.3）／快取 6.9／空著 1.1 GB）。
+
 ## 還沒做／待確認
 
 - Mac 第 2 段的選單列：使用者自己點一次（字、顏色、選單、「開啟主畫面」「結束」）；第一次關視窗的通知沒看過。

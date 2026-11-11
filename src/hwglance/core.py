@@ -317,10 +317,13 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     from .processes import ActionLog, DemoProcesses, WindowsProcesses
     from .tempfiles import DemoTemp, TempCleaner
     processes = memory = temp = None
+    mac_memory = getattr(source, "memory_tool", None)        # Mac：只讀的組成與壓力（sensors/mac.py 的 MacMemory）
     if demo:
         processes = DemoProcesses(source) if "processes" in features else None
-        memory = DemoMemory() if "memory" in features else None
+        memory = (mac_memory() if callable(mac_memory) else DemoMemory()) if "memory" in features else None
         temp = DemoTemp(processes) if "temp" in features and processes is not None else None   # 不碰這台的暫存資料夾
+    elif callable(mac_memory) and "memory" in features:
+        memory = mac_memory()
     elif sys.platform == "win32":
         actions = ActionLog(paths.data_dir() / "actions.log")
         processes, memory = WindowsProcesses(actions), MemoryTool(log=actions)

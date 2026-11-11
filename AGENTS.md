@@ -22,7 +22,7 @@ commit 的作者用 repo 自設的 `HWGlance <jacky0788@users.noreply.github.com
 HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctypes），`sensors/mac.py` 整理成跟 LHM 一樣的硬體樹，後面全部照用。
 第 1 段（讀數＋即時監控頁）、第 2 段（選單列 `menubar.py`、`HWGlance.app`、視窗的 Mac 外觀）、第 3 段（事件記錄：核心錯誤報告與上次關機原因，`events/mac.py`）做完。
 Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執行緒跑 AppKit 的事件迴圈；視窗程序照舊另開。Mac 版沒有的功能靠快照的
-`source.features`（`service.ALL_FEATURES`）藏起來：Mac 有 `tray`（＝選單列）、`events`，暫存檔、迷你模式、記憶體組成、關閉程式都不開；
+`source.features`（`service.ALL_FEATURES`）藏起來：Mac 有 `tray`（＝選單列）、`events`、`memory`（組成與記憶體壓力，只讀、沒有釋放：`mac.MacMemory`），暫存檔、迷你模式、關閉程式都不開；
 設定頁的門檻只列來源的 `roles`（`mac.MAC_ROLES`）。**配色、版面照 Windows 版**（使用者定過的，SPEC D22、D28），Mac 只改視窗外框與字型。
 
 ## 程式在哪裡

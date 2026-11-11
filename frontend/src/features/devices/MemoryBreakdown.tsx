@@ -1,6 +1,7 @@
 // 記憶體卡片的組成長條（使用中、已壓縮、待寫回、待命快取、完全空著）與「釋放記憶體」（SPEC D32，後端 memory.py）。
 // 每 5 秒抓 /api/memory（畫面看不到就不抓）；按「釋放」先在卡片裡確認，結果把「可用」與「完全空著」分開寫（清待命快取只會讓後者變多）。
 // 卡片整張可以點開詳細資訊，所以這裡的點擊一律 stopPropagation。
+// Mac（後端 sensors/mac.py 的 MacMemory）：名稱照活動監視器、上面多一行記憶體壓力、沒有釋放按鈕。
 import { Eraser } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
@@ -15,7 +16,27 @@ const SEGMENT_COLOR: Record<MemorySegmentKey, string> = {
   modified: "bg-(--mem-modified)",
   standby: "bg-(--mem-standby)",
   free: "bg-(--mem-free)",
+  wired: "bg-(--mem-wired)",
 };
+const PRESSURE: Record<string, { text: string; level: string; note: string }> = {
+  normal: { text: "正常", level: "level-ok", note: "記憶體夠用" },
+  warn: { text: "偏高", level: "level-warm", note: "macOS 開始大量壓縮、可能用到交換空間，程式可能變慢" },
+  critical: { text: "很高", level: "level-hot", note: "記憶體不夠用了，關掉一些不用的程式" },
+};
+
+// Mac：活動監視器判斷夠不夠用看的是「記憶體壓力」，不是已用幾 %（已壓縮也算已用，所以常常看起來偏高）
+function Pressure({ p }: { p: NonNullable<MemoryStatus["pressure"]> }) {
+  const shown = p.level ? PRESSURE[p.level] : null;
+  if (!shown) return null;
+  return (
+    <p className={`${shown.level} m-0 mb-2 flex items-center gap-1.5 text-xs`} title={shown.note}>
+      <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--level)" />
+      <span className="text-fg-muted">記憶體壓力</span>
+      <span className="font-semibold text-(--level)">{shown.text}</span>
+      {p.free != null ? <span className="text-fg-subtle num">・系統還剩 {p.free}%</span> : null}
+    </p>
+  );
+}
 const small = "rounded-md border px-2 py-0.5 text-xs cursor-pointer disabled:opacity-50";
 const plain = `${small} border-line text-fg-muted hover:text-fg hover:border-line-strong`;
 
@@ -84,8 +105,10 @@ export function MemoryBreakdown({ status, refresh }: { status: MemoryStatus; ref
   };
 
   const shown = status.segments.filter((s) => s.bytes > 0);
+  const mac = status.pressure != null;
   return (
     <div onClick={stop}>
+      {status.pressure ? <Pressure p={status.pressure} /> : null}
       <div className="flex h-2.5 rounded-full bg-track overflow-hidden" role="img"
         aria-label={shown.map((s) => `${s.label} ${gb(s.bytes)} GB`).join("、")}>
         {shown.map((s) => (
@@ -98,16 +121,22 @@ export function MemoryBreakdown({ status, refresh }: { status: MemoryStatus; ref
           <li key={s.key} className="flex items-center gap-1.5 min-w-0" title={s.note}>
             <span aria-hidden className={`size-2 shrink-0 rounded-full ${SEGMENT_COLOR[s.key]}`} />
             <span className="text-fg-muted truncate">{s.label}</span>
-            <span className="ml-auto num">{gb(s.bytes)}<span className="ml-0.5 text-fg-subtle">GB</span></span>
+            <span className="ml-auto num">
+              {gb(s.bytes)}<span className="ml-0.5 text-fg-subtle">GB</span>
+              {s.key === "compressed" && status.compression.stored
+                ? <span className="ml-0.5 text-fg-subtle">（{gb(status.compression.stored)}）</span>
+                : null}
+            </span>
           </li>
         ))}
       </ul>
       <p className="m-0 mt-1.5 text-xs text-fg-subtle">
-        可用 {gb(status.available)} GB（待命快取＋完全空著）・Windows 記憶體壓縮
-        {status.compression.enabled ? `開著（佔 ${gb(status.compression.bytes)} GB）` : "沒開"}
+        {mac
+          ? `可用 ${gb(status.available)} GB（快取的檔案＋空著）・已壓縮的 ${gb(status.compression.bytes)} GB 裡是 ${gb(status.compression.stored ?? 0)} GB 的資料`
+          : `可用 ${gb(status.available)} GB（待命快取＋完全空著）・Windows 記憶體壓縮${status.compression.enabled ? `開著（佔 ${gb(status.compression.bytes)} GB）` : "沒開"}`}
       </p>
 
-      <div className="mt-2.5 text-xs">
+      {status.canRelease === false ? null : <div className="mt-2.5 text-xs">
         {step === "confirm" ? (
           <div role="alertdialog" aria-label="確認釋放記憶體" className="rounded-lg border border-line bg-surface-2 px-3 py-2 space-y-1.5">
             <p className="m-0 text-fg-muted">
@@ -132,7 +161,7 @@ export function MemoryBreakdown({ status, refresh }: { status: MemoryStatus; ref
         )}
         {result ? <div role="status" className="mt-2"><ReleaseResult r={result} /></div> : null}
         {error ? <p role="alert" className="m-0 mt-2 text-warm">{error}</p> : null}
-      </div>
+      </div>}
     </div>
   );
 }

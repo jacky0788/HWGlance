@@ -394,7 +394,9 @@ def memory_pages() -> dict[str, int]:
     if _libc().host_statistics64(_host(), VM_INFO64, ctypes.byref(stats), ctypes.byref(count)):
         raise OSError("讀不到記憶體統計")
     return {"internal": stats.internal_page_count, "purgeable": stats.purgeable_count, "wired": stats.wire_count,
-            "compressed": stats.compressor_page_count, "page": os.sysconf("SC_PAGE_SIZE")}
+            "compressed": stats.compressor_page_count, "external": stats.external_page_count,   # 快取的檔案
+            "stored": stats.total_uncompressed_pages_in_compressor,                             # 壓縮前有多少
+            "page": os.sysconf("SC_PAGE_SIZE")}
 
 
 def sysctl_int(name: str) -> int | None:

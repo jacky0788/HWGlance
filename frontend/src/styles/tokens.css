@@ -64,6 +64,8 @@
   --mem-modified: var(--m-power);
   --mem-standby: var(--swatch-sky);
   --mem-free: var(--swatch-silver);
+  /* Mac 的「聯動」：跟 Windows 的待寫回不會同時出現，用同一個顏色 */
+  --mem-wired: var(--m-power);
 }
 
 @media (prefers-color-scheme: dark) {
