@@ -395,7 +395,7 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
 ### Mac 版第 1 段：讀數層＋即時監控頁（2026-11-11，M1）
 
 使用者 2026-11-11 問能不能做 Mac 版，評估後分三段：①讀數層＋即時監控頁 ②選單列圖示、App 包裝、Mac 外觀 ③當機報告與上次關機原因。
-使用者說「開始做第 1 段」。在 Mac 的 clone（`feat/macos` 分支）做，**從 GitHub 的 e95e9ca 開始**：家用機 11-07 的 D34～D36 還沒推上去，
+使用者說「開始做第 1 段」。在 Mac 的 clone（當時叫 `feat/macos`，後來改名 `mac`）做，**從 GitHub 的 e95e9ca 開始**：家用機 11-07 的 D34～D36 還沒推上去，
 所以 Mac 的決策用 M 編號，免得跟家用機的 D 編號撞號；合併時兩邊都要留。
 
 | # | 決策 | 原因 |
@@ -454,13 +454,22 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
   `npm run build` 通過；示範資料在內建瀏覽器看過事件頁、點開那件事（經過、前一次開機、黑盒子、說明、建議）；這台真的資料：讀一次 8 ms、沒有事件（這台沒當過）、
   `macboots.jsonl` 第二次啟動沒有重記。**沒有真的核心錯誤報告可以驗**（這台沒有），格式照 Apple 的報告寫、用編的資料測。
 
+### 兩個版本：main＝Windows、mac＝Mac（2026-11-11，M12）
+
+| # | 決策 | 原因 |
+|---|---|---|
+| M12 | 同一個 repo 兩條分支：`main`＝Windows 版（照舊，家用機繼續在上面做）、`mac`＝Mac 版（Mac 的第 1～3 段）。各自發展、互不影響，之後想合再合；推上 GitHub 時不帶任何個人資訊 | 使用者說「專案要分兩個版本，一個是 Mac 版本和 Windows 版本，commit 到遠端時不要帶入任何個人資訊」，三種分法裡選了兩條分支 |
+
+- `mac` 分支的程式照樣能在 Windows 跑（平台差異靠 `source.features`、`sys.platform`），只是 Windows 版以 `main` 為準。
+- 推之前查過：三個 commit 的作者、提交者都是 GitHub 的匿名信箱，訊息與全部檔案沒有帳號名稱、家目錄路徑、電腦名稱、個人信箱、硬碟序號。
+
 ## 還沒做／待確認
 
 - Mac 第 2 段的選單列：使用者自己點一次（字、顏色、選單、「開啟主畫面」「結束」）；第一次關視窗的通知沒看過。
 - Mac 事件記錄：等真的有一次核心錯誤時，看報告的格式跟 `parse_panic` 對不對得上；`kern.shutdownreason` 的其他代號遇到再補（M10）。
 - Mac 之後可以加：App 當掉（`~/Library/Logs/DiagnosticReports` 的 .ips，bug_type 309）。
 - Mac 之後：CPU／GPU 的時脈與功耗（IOReport）；GPU 門檻照真機調；其他 Apple 晶片（M3 的 SMC 用 Tf）沒有真機驗。
-- 合併：家用機 11-07 的 D34～D36 推上去後，跟 `feat/macos` 合併（`normalize.py`、`details.py`、`format.ts`、`tests/test_blackbox.py` 兩邊都有改）。
+- 兩條分支要合的時候：家用機 11-07 的 D34～D36 先推上 `main`，再把 `mac` 合過去（`normalize.py`、`details.py`、`format.ts`、`tests/test_blackbox.py` 兩邊都有改）。
 
 - 真機看第 10 段③：重開 HWGlance（系統管理員）→「暫存檔」→ 掃描，看數字合不合理、被鎖住的是哪些程式；要刪時自己按。
 - 真機看第 10 段②：重開 HWGlance（系統管理員）後看記憶體卡片的組成跟工作管理員對不對得上；自己按一次「釋放記憶體」，看結果與 `data/actions.log`。

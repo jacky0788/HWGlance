@@ -14,7 +14,11 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 （Win32 分層視窗＋Pillow 畫字，像 RivaTuner：背景可以半透明、字照樣清楚），跟主畫面同時只開一個；遊戲 FPS 用 PresentMon。
 本體要以系統管理員執行才讀得到 CPU／主機板／硬碟（`run.bat` 會自己跳 UAC）；PawnIO 由使用者自己安裝。
 
-**Mac 版（2026-11-11 起，`feat/macos` 分支，分段做，SPEC 的「Mac 版」與 M1…）**：Apple 晶片一般權限就讀得到——SMC 的溫度與風扇、
+**兩個版本（2026-11-11 使用者定）：`main`＝Windows 版、`mac`＝Mac 版**，同一個 repo 兩條分支、各自發展，要合再合（SPEC M12）。
+在 Windows 上做就在 `main`，在 Mac 上做就在 `mac`；推上 GitHub（公開）前一定掃一次個人資訊（帳號名稱、家目錄路徑、電腦名稱、信箱、序號），
+commit 的作者用 repo 自設的 `HWGlance <jacky0788@users.noreply.github.com>`。
+
+**Mac 版（2026-11-11 起，`mac` 分支，分段做，SPEC 的「Mac 版」與 M1…）**：Apple 晶片一般權限就讀得到——SMC 的溫度與風扇、
 HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctypes），`sensors/mac.py` 整理成跟 LHM 一樣的硬體樹，後面全部照用。
 第 1 段（讀數＋即時監控頁）、第 2 段（選單列 `menubar.py`、`HWGlance.app`、視窗的 Mac 外觀）、第 3 段（事件記錄：核心錯誤報告與上次關機原因，`events/mac.py`）做完。
 Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執行緒跑 AppKit 的事件迴圈；視窗程序照舊另開。Mac 版沒有的功能靠快照的
