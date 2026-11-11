@@ -31,7 +31,7 @@ Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執�
 |---|---|
 | `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL（CLR 啟動前設 `CSE_POLICY`，存取違規才接得到）、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware`；某一類讀失敗交給 `guard.py` 停讀、到時候 `Is*Enabled` 關掉重開；`specs()` 讀規格（SMBIOS＋WMI 的硬碟與顯示卡驅動） |
 | `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣；`IntelLaptopDemo`（`--demo-profile intel-laptop`）是另一種電腦：Intel 12 代筆電（效能核／節能核、內顯＋筆電獨顯、電池、主機板沒有感測器），名稱照 LHM 原始碼 |
-| `src/hwglance/sensors/macio.py` | **Mac 唯一碰系統 API 的地方**（ctypes）：`Smc`（只送讀取的指令）、`HidTemps`（SSD 的 NAND 溫度）、`cpu_ticks`、`Accelerator`（GPU 使用率、核心數）、`memory_pages`、`sysctl_*`、`core_levels`、`profile`（system_profiler，不讀序號）、`volume_space`；函式庫第一次用到才載入，Windows 也 import 得起來 |
+| `src/hwglance/sensors/macio.py` | **Mac 唯一碰系統 API 的地方**（ctypes）：`IOReport`（時脈的狀態停留、GPU 能量）、`freq_tables`（pmgr 的頻率表）、`Smc`（只送讀取的指令）、`HidTemps`（SSD 的 NAND 溫度）、`cpu_ticks`、`Accelerator`（GPU 使用率、核心數）、`memory_pages`、`sysctl_*`、`core_levels`、`profile`（system_profiler，不讀序號）、`volume_space`；函式庫第一次用到才載入，Windows 也 import 得起來 |
 | `src/hwglance/sensors/mac.py` | Mac 的來源 `MacSource`（kind `mac`，`features=()`）：開啟時列 SMC 的 Tp／Te／Tg／TB 鍵、讀型號；每輪讀溫度、風扇、使用率、記憶體，SSD 每 10 輪；`build_tree`（純函式）把 `Readings` 變成 CPU（`/applesoc/0`）、GPU（`/applegpu/0`，type `GpuApple`）、機身（`/applesmc/0`：電池、風扇）、記憶體、SSD；`tests/test_mac.py` 用假讀數、假 io 測。`demo.MacDemo`（`--demo-profile mac`）照那台 M6 模擬 |
 | `src/hwglance/sensors/model.py` | `RawHardware`／`RawSensor`（LHM 與示範資料共用的形狀） |
 | `src/hwglance/sensors/normalize.py` | 整理：分類、總覽磚塊、主溫度、負載／時脈／功耗、風扇。純函式，`tests/test_normalize.py` 用假樹測 |
@@ -129,7 +129,8 @@ Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執�
 - SMC 3209 個鍵、159 個溫度（Apple 晶片是 `flt ` 小端序）；Tp 21 個、Te 9 個、Tg 18 個、TB0T～TB2T；FNum＝1，閒置時 F0Ac＝0（停轉），F0Mn 2000、F0Mx 8250。
   列鍵 26 ms、讀 51 個鍵 7 ms，整輪約 9 ms。Apple 沒公開鍵的意思，每代晶片不一樣（M3 用 Tf），別台 Mac 沒驗過。
 - HID 溫度感測器 47 個（PMU tdie…、NAND CH0 temp、gas gauge battery），名稱沒分 CPU／GPU，所以只拿 NAND 當 SSD 溫度。
-- 一般權限讀不到時脈與功耗：要 IOReport（私有框架）或 `powermetrics`（要 sudo），還沒做。
+- 時脈與功耗（2026-11-11，SPEC M13）：IOReport（`/usr/lib/libIOReport.dylib`，一般權限）的 `CPU Stats/CPU Core Performance States`（每顆核心：EACC_ECPU0～5、PACC0_PCPU0～1＝超級核、PACC0_MCPU2～5＝效能核，狀態 IDLE＋V0P6…只是編號）× IODeviceTree `pmgr-child` 的頻率表（`voltage-states1-sram` 節能核 7 階 972～2940 MHz、`voltage-states5-sram` 效能／超級核 20 階 1440～4788 MHz，單位 kHz；`voltage-states9` GPU 0＋13 階 502～1735 MHz，單位 Hz，GPU 卻有 15 個狀態，多的算最高那階）。`Energy Model` 在 M6 只有 `GPU Energy`（nJ）：
+  **沒有 CPU 的能量**；`PMP/Energy` 是功率直方圖（狀態名稱「0.250W」…），跟 GPU Energy 對不上；SMC 的 P 開頭鍵有好幾個在負載時一起漲 14～20 W、意思沒公開。所以 CPU 功耗不顯示；整台用 SMC 的 `PSTR`（閒置 9 W、六核滿載 30 W）。取樣一次約 4 ms。
 - pywebview 在 Mac 走 Cocoa＋WKWebView。從 HWGlance.app 開時兩個程序都是 HWGlance（`lsappinfo`：本體 type＝UIElement、視窗 Foreground）；
   從終端機開的視窗程序 Dock 上還是 Python 的圖示（`mac_identity` 只改得了選單列的名稱與圖示）。
 - Python 一啟動就把 `__PYVENV_LAUNCHER__` 從環境變數拿掉：本體開視窗程序時要再帶一次（`core.Window._spawn_process`），不然視窗程序找不到 .venv。

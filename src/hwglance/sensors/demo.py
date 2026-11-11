@@ -473,10 +473,16 @@ class MacDemo(DemoSource):
         fan = v["mac_fan"] if v["mac_fan"] >= 1500 else 0.0
         loads = [min(100.0, max(0.0, 100 * v["cpu_load"] * (1.0 if i < 6 else 0.5) + self._noise(5)))
                  for i in range(self.CORES)]
+        # 時脈與功耗照那台 M6 的實測：閒置平均約 1.6 GHz、滿載效能／超級核 4788 MHz、節能核 2.5 GHz；
+        # GPU 502～1735 MHz、閒置約 0.4 W；整台閒置約 9 W、六核滿載約 30 W
+        cl, gl = v["cpu_load"], v["gpu_load"]
+        tiers = {"Super": 1800 + 2988 * cl, "Performance": 1840 + 2948 * cl, "Efficiency": 1590 + 950 * cl}
         r = Readings(chip="Apple M6", model="MacBook Pro", temps=temps, fans=[(fan, 2000.0, 8250.0)],
-                     cpu_loads=loads, gpu_load=100 * v["gpu_load"],
-                     memory=((18 + 6 * v["cpu_load"]) * 2**30, 32 * 2**30),
-                     ssd="APPLE SSD AP1024Z", ssd_temp=v.get("mac_ssd"), disk=(863.9e9, 994.6e9))
+                     cpu_loads=loads, gpu_load=100 * gl,
+                     memory=((18 + 6 * cl) * 2**30, 32 * 2**30),
+                     ssd="APPLE SSD AP1024Z", ssd_temp=v.get("mac_ssd"), disk=(863.9e9, 994.6e9),
+                     clock=1630 + 2720 * cl, tier_clocks=tiers, gpu_clock=502 + 1233 * gl,
+                     gpu_power=0.35 + 14 * gl + self._noise(0.05), system_power=9 + 21 * cl + 12 * gl)
         return build_tree(r, self._mac_sensor)
 
     def specs(self) -> dict:

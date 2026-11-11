@@ -230,7 +230,7 @@ def _cpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
         clock_value = clock.value
     dev.stat("clock", "時脈", clock_value, "MHz")
     power = _find(hw, "Power", "Package", "CPU Package")
-    dev.stat("power", "功耗", power and power.value, "W")
+    dev.stat("power", "功耗", power and power.value, "W", digits=1 if hw.id.startswith(APPLE) else 0)
     return dev
 
 
@@ -266,7 +266,7 @@ def _gpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     clock = _find(hw, "Clock", "GPU Core")
     dev.stat("clock", "時脈", clock and clock.value, "MHz")
     power = _find(hw, "Power", "GPU Package", "GPU Power") or next(iter(_of(hw, "Power")), None)
-    dev.stat("power", "功耗", power and power.value, "W")
+    dev.stat("power", "功耗", power and power.value, "W", digits=1 if hw.id.startswith(APPLE) else 0)
     fans = [s for s in _of(hw, "Fan") if s.value is not None]
     controls = [s for s in _of(hw, "Control") if s.value is not None]
     if fans:

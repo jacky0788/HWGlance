@@ -7,7 +7,8 @@
   一個點不是一個核心（M6 只有 12 核心），所以卡片只放最高與平均，每個點放在詳細資訊。
 - 風扇：FNum 個，F0Ac 現在轉速、F0Mn／F0Mx 最低與最高轉速；MacBook Pro 閒置時風扇會停（0 RPM），不是沒接。
 - SSD 溫度：HID 感測器「NAND CH0 temp」（Apple 自己的名稱）；SSD 型號與韌體查 system_profiler（不讀序號）。
-- 一般權限讀不到時脈與功耗（要 IOReport，之後再做），所以 CPU、GPU 卡片沒有時脈、功耗。
+- 時脈與 GPU 功耗讀 IOReport（macio.IOReport）：各效能狀態停留多久 × pmgr 的頻率表；CPU 功耗在 M6 沒有可靠的來源，不放；
+  整台的功耗是 SMC 的 PSTR。
 - 記憶體的「已使用」照「活動監視器」：App 記憶體（internal − purgeable）＋聯動＋已壓縮。
 
 低階讀取在 macio.py；這個檔把讀數變成硬體樹（build_tree 是純函式，tests/test_mac.py 用假的讀數測）。
@@ -47,9 +48,79 @@ class Readings:
     ssd: str | None = None                                         # 內建 SSD 型號
     ssd_temp: float | None = None
     disk: tuple[float, float] | None = None                        # (可用, 總共) 位元組
+    clock: float | None = None                                     # CPU 平均時脈 MHz（有在跑的時間加權）
+    tier_clocks: dict[str, float] = field(default_factory=dict)    # 各種核心的時脈：{"Performance": MHz, …}
+    gpu_clock: float | None = None
+    gpu_power: float | None = None                                 # W（IOReport 的 GPU Energy）
+    system_power: float | None = None                              # W（SMC 的 PSTR，整台）
 
 
 SensorMaker = Callable[[str, str, str, str, float | None], RawSensor]
+
+# ---- 時脈：IOReport 每個效能狀態停留多久 × 那一階的頻率（macio.IOReport、macio.freq_tables） ----
+IDLE_STATES = frozenset({"IDLE", "OFF", "DOWN"})
+# 通道名稱 → 用哪一張頻率表（M1～M6 都是這三張；M6 的超級核 PCPU 跟效能核 MCPU 在同一群、用同一張）
+TABLE_OF = (("ECPU", "voltage-states1-sram"), ("PCPU", "voltage-states5-sram"), ("MCPU", "voltage-states5-sram"),
+            ("GPUPH", "voltage-states9"))
+
+
+def mhz(raw: int) -> float:
+    """頻率表的原始值 → MHz：CPU 的表是 kHz（972000）、GPU 的是 Hz（502000000）。"""
+    return raw / 1e6 if raw >= 1e8 else raw / 1e3
+
+
+def active_clock(states: list[tuple[str, int]], table: list[int]) -> tuple[float, float]:
+    """(在跑的時間, Σ時間×MHz)。IDLE／OFF 以外的狀態照順序對到表上非 0 的頻率（由低到高）；
+    狀態比表多（M6 的 GPU 有 15 個狀態、表只有 13 階）時，多出來的算最高那一階。"""
+    freqs = [mhz(v) for v in table if v > 0]
+    active = [r for name, r in states if name.strip().upper() not in IDLE_STATES]
+    busy = weighted = 0.0
+    if not freqs:
+        return busy, weighted
+    for i, r in enumerate(active):
+        if r > 0:
+            busy += r
+            weighted += r * freqs[min(i, len(freqs) - 1)]
+    return busy, weighted
+
+
+def tier_of(channel: str, levels: list[str]) -> str | None:
+    """核心通道 → 哪一種核心（照 sysctl 的 perflevel 名稱，快的在前）：ECPU＝最慢那種、PCPU＝最快那種、
+    MCPU（M6 才有）＝中間那種。"""
+    if "ECPU" in channel:
+        return levels[-1] if levels else "Efficiency"
+    if "MCPU" in channel:
+        return levels[1] if len(levels) >= 3 else (levels[0] if levels else "Performance")
+    if "PCPU" in channel:
+        return levels[0] if levels else "Performance"
+    return None
+
+
+def clocks(states: dict[str, list[tuple[str, int]]], tables: dict[str, list[int]],
+           levels: list[str]) -> tuple[float | None, dict[str, float], float | None]:
+    """(CPU 平均時脈, {核心種類: 時脈}, GPU 時脈)，都是 MHz，只算在跑的時間；整段都閒著的就沒有。"""
+    cpu = [0.0, 0.0]
+    tiers: dict[str, list[float]] = {}
+    gpu = None
+    for channel, st in states.items():
+        table = next((tables.get(key) for prefix, key in TABLE_OF if prefix in channel), None)
+        if not table:
+            continue
+        busy, weighted = active_clock(st, table)
+        if "GPUPH" in channel:
+            gpu = weighted / busy if busy else None
+            continue
+        tier = tier_of(channel, levels)
+        if tier is None:
+            continue
+        cpu[0] += busy
+        cpu[1] += weighted
+        acc = tiers.setdefault(tier, [0.0, 0.0])
+        acc[0] += busy
+        acc[1] += weighted
+    avg = cpu[1] / cpu[0] if cpu[0] else None
+    order = [t for t in levels if t in tiers] + [t for t in tiers if t not in levels]   # 快的在前，跟「核心種類」一樣
+    return avg, {t: tiers[t][1] / tiers[t][0] for t in order if tiers[t][0]}, gpu
 
 
 class Extremes:
@@ -119,6 +190,10 @@ def build_tree(r: Readings, sensor: SensorMaker) -> list[RawHardware]:
         cpu += [sensor(CPU_ID, "Load", "total", "CPU Total", fmean(r.cpu_loads)),
                 sensor(CPU_ID, "Load", "coremax", "CPU Core Max", max(r.cpu_loads))]
         cpu += [sensor(CPU_ID, "Load", f"core{i}", f"CPU Core #{i}", v) for i, v in enumerate(r.cpu_loads, 1)]
+    # 時脈（IOReport）：整段都閒著就沒有那一筆；CPU 功耗在 M6 讀不到可靠的來源，不放（SPEC M13）
+    if r.clock is not None:
+        cpu.append(sensor(CPU_ID, "Clock", "avg", "Cores (Average)", r.clock))
+    cpu += [sensor(CPU_ID, "Clock", tier.lower(), f"{tier} Cores", v) for tier, v in r.tier_clocks.items()]
 
     gpu: list[RawSensor] = []
     if g_points:
@@ -128,6 +203,10 @@ def build_tree(r: Readings, sensor: SensorMaker) -> list[RawHardware]:
         gpu += [sensor(GPU_ID, "Temperature", k, f"GPU Cluster #{i}", v) for i, (k, v) in enumerate(g_points, 1)]
     if r.gpu_load is not None:
         gpu.append(sensor(GPU_ID, "Load", "core", "GPU Core", r.gpu_load))
+    if r.gpu_clock is not None:
+        gpu.append(sensor(GPU_ID, "Clock", "core", "GPU Core", r.gpu_clock))
+    if r.gpu_power is not None:
+        gpu.append(sensor(GPU_ID, "Power", "power", "GPU Power", r.gpu_power))
 
     board: list[RawSensor] = []
     battery = [v for k, v in r.temps.items() if BATTERY_KEY.fullmatch(k) and valid(v)]
@@ -135,6 +214,8 @@ def build_tree(r: Readings, sensor: SensorMaker) -> list[RawHardware]:
         board.append(sensor(BOARD_ID, "Temperature", "battery", "Battery", max(battery)))
     for i, (now, _lo, _hi) in enumerate(r.fans):
         board.append(sensor(BOARD_ID, "Fan", f"fan{i}", f"Fan #{i + 1}", now))
+    if r.system_power is not None:
+        board.append(sensor(BOARD_ID, "Power", "system", "System Total", r.system_power))
 
     ram: list[RawSensor] = []
     if r.memory is not None:
@@ -183,8 +264,10 @@ class MacSource:
         self.errors: list[str] = []
         self._sensor = Extremes()
         self._r = Readings()
-        self._smc = self._hid = self._gpu = None
+        self._smc = self._hid = self._gpu = self._ior = None
         self._keys: list[str] = []
+        self._tables: dict[str, list[int]] = {}
+        self._levels: list[str] = []
         self._ticks = None
         self._specs: dict = {}
 
@@ -229,8 +312,16 @@ class MacSource:
             g.open()
             return g
         self._gpu = self._try("GPU 使用率", gpu)
-        levels = self._try("讀不到核心種類", io.core_levels, [])
+        levels = self._try("核心種類", io.core_levels, [])
+        self._levels = [name for name, _ in levels]
         cores = sum(n for _, n in levels) or None
+
+        def ioreport():
+            rep = io.IOReport()
+            rep.open()
+            return rep
+        self._tables = self._try("時脈的頻率表", io.freq_tables, {}) or {}
+        self._ior = self._try("時脈與 GPU 功耗（IOReport）", ioreport)
         self._specs = {
             "cpu": {"cores": cores, "threads": cores, "layout": core_layout(levels)},
             "gpus": {f"{self._r.chip} GPU": {"cores": self._gpu.cores() if self._gpu else None}},
@@ -250,11 +341,20 @@ class MacSource:
             self._ticks = ticks
         if self._gpu is not None:
             r.gpu_load = self._try("GPU 使用率", self._gpu.utilization)
+        if self._ior is not None:
+            sample = self._try("時脈與 GPU 功耗（IOReport）", self._ior.sample)
+            if sample:
+                r.clock, r.tier_clocks, r.gpu_clock = clocks(sample["states"], self._tables, self._levels)
+                joules, dt = sample["energy"].get("GPU Energy"), sample["dt"]
+                r.gpu_power = joules / dt if joules is not None and dt > 0 else None
+        if self._smc is not None:                     # 整台的功耗（PSTR），亂跳的值（0 以下、超過 500 W）不收
+            watts = self._smc.read("PSTR")
+            r.system_power = watts if watts is not None and 0 <= watts < 500 else None
 
         def memory():
             total = io.sysctl_int("hw.memsize")
             return (memory_used(io.memory_pages()), total) if total else None
-        r.memory = self._try("讀不到記憶體", memory)
+        r.memory = self._try("記憶體", memory)
         if slow:                                      # SSD 跟 Windows 的硬碟一樣每 10 秒讀一次
             if self._hid is not None:
                 nand = self._try("SSD 溫度", self._hid.read, {}) or {}
@@ -268,10 +368,10 @@ class MacSource:
         return self._specs
 
     def close(self) -> None:
-        for part in (self._smc, self._hid, self._gpu):
+        for part in (self._smc, self._hid, self._gpu, self._ior):
             if part is not None:
                 try:
                     part.close()
                 except Exception:                    # noqa: BLE001 - 結束時的錯誤不重要
                     traceback.print_exc()
-        self._smc = self._hid = self._gpu = None
+        self._smc = self._hid = self._gpu = self._ior = None

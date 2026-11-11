@@ -12,6 +12,7 @@ import json
 import os
 import struct
 import subprocess
+import time
 
 vp = ctypes.c_void_p
 u32 = ctypes.c_uint32
@@ -450,3 +451,144 @@ def boot_time() -> float | None:
     if _libc().sysctlbyname(b"kern.boottime", ctypes.byref(tv), ctypes.byref(size), None, 0):
         return None
     return tv.sec + tv.usec / 1e6 if tv.sec > 0 else None
+
+
+# ---- IOReport（Apple 沒公開的框架，一般權限就能用）：時脈（各效能狀態的停留時間）與 GPU 能量 ----
+# 2026-11-11 在 M6 查的：CPU Stats/CPU Core Performance States 每顆核心一個通道（EACC_ECPU0～5、PACC0_PCPU0～1、
+# PACC0_MCPU2～5），狀態是 IDLE＋V0P6…（只是編號、沒有頻率）；頻率表在 IODeviceTree 的 pmgr 節點
+# （voltage-states1-sram＝節能核 7 階、voltage-states5-sram＝效能／超級核 20 階，單位 kHz；voltage-states9＝GPU，單位 Hz）。
+# Energy Model 在 M6 只有 GPU Energy（nJ），沒有 CPU；PMP/Energy 是功率直方圖，跟 GPU Energy 對不上，不用。
+
+IOREPORT_GROUPS = (("Energy Model", None), ("CPU Stats", "CPU Core Performance States"),
+                   ("GPU Stats", "GPU Performance States"))
+FREQ_TABLES = ("voltage-states1-sram", "voltage-states5-sram", "voltage-states9")
+
+
+@functools.cache
+def _ioreport():
+    ior = ctypes.cdll.LoadLibrary("/usr/lib/libIOReport.dylib")
+    for name, res, args in (
+            ("IOReportCopyChannelsInGroup", vp, [vp, vp, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64]),
+            ("IOReportMergeChannels", None, [vp, vp, vp]),
+            ("IOReportCreateSubscription", vp, [vp, vp, ctypes.POINTER(vp), ctypes.c_uint64, vp]),
+            ("IOReportCreateSamples", vp, [vp, vp, vp]),
+            ("IOReportCreateSamplesDelta", vp, [vp, vp, vp]),
+            ("IOReportChannelGetGroup", vp, [vp]),
+            ("IOReportChannelGetChannelName", vp, [vp]),
+            ("IOReportChannelGetUnitLabel", vp, [vp]),
+            ("IOReportChannelGetFormat", ctypes.c_uint8, [vp]),
+            ("IOReportSimpleGetIntegerValue", ctypes.c_int64, [vp, ctypes.c_int32]),
+            ("IOReportStateGetCount", ctypes.c_int32, [vp]),
+            ("IOReportStateGetNameForIndex", vp, [vp, ctypes.c_int32]),
+            ("IOReportStateGetResidency", ctypes.c_int64, [vp, ctypes.c_int32])):
+        f = getattr(ior, name)
+        f.restype, f.argtypes = res, args
+    cf = _cf()
+    cf.CFDictionaryGetCount.restype = ctypes.c_long
+    cf.CFDictionaryGetCount.argtypes = [vp]
+    cf.CFDictionaryCreateMutableCopy.restype = vp
+    cf.CFDictionaryCreateMutableCopy.argtypes = [vp, ctypes.c_long, vp]
+    return ior
+
+
+def freq_tables() -> dict[str, list[int]]:
+    """IODeviceTree 裡的頻率表：{鍵: [每一階的頻率（原始單位：CPU 是 kHz、GPU 是 Hz）]}。ioreg 讀一次約 0.1 秒。"""
+    import plistlib
+    try:
+        raw = subprocess.run(["/usr/sbin/ioreg", "-a", "-p", "IODeviceTree", "-r", "-k", FREQ_TABLES[1], "-d", "1"],
+                             capture_output=True, timeout=15, check=False).stdout
+        nodes = plistlib.loads(raw) if raw else []
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+    node = nodes[0] if isinstance(nodes, list) and nodes else nodes if isinstance(nodes, dict) else {}
+    out = {}
+    for key in FREQ_TABLES:
+        data = node.get(key)
+        if isinstance(data, bytes) and len(data) >= 8:
+            out[key] = [struct.unpack_from("<I", data, i * 8)[0] for i in range(len(data) // 8)]
+    return out
+
+
+class IOReport:
+    """訂閱上面三組通道；sample() 回傳跟上一次的差：{"dt": 秒, "energy": {通道: 焦耳}, "states": {通道: [(狀態, 停留)]}}。"""
+
+    def __init__(self) -> None:
+        self._sub = self._channels = self._last = None
+        self._t = 0.0
+
+    def open(self) -> None:
+        ior, cf = _ioreport(), _cf()
+        merged = None
+        for group, sub in IOREPORT_GROUPS:
+            g, s = _cfstr(group), _cfstr(sub) if sub else None
+            chans = ior.IOReportCopyChannelsInGroup(g, s, 0, 0, 0)
+            for ref in (g, s):
+                if ref:
+                    cf.CFRelease(ref)
+            if not chans:
+                continue
+            if merged is None:
+                merged = chans
+            else:
+                ior.IOReportMergeChannels(merged, chans, None)
+                cf.CFRelease(chans)
+        if merged is None:
+            raise OSError("IOReport 沒有時脈與能量的通道")
+        mutable = cf.CFDictionaryCreateMutableCopy(None, cf.CFDictionaryGetCount(merged), merged)
+        cf.CFRelease(merged)
+        subscribed = vp()
+        self._sub = ior.IOReportCreateSubscription(None, mutable, ctypes.byref(subscribed), 0, None)
+        cf.CFRelease(mutable)
+        if not self._sub:
+            raise OSError("訂閱 IOReport 失敗")
+        self._channels = subscribed.value
+        self._last = ior.IOReportCreateSamples(self._sub, self._channels, None)
+        self._t = time.monotonic()
+
+    def sample(self) -> dict | None:
+        ior, cf = _ioreport(), _cf()
+        now = ior.IOReportCreateSamples(self._sub, self._channels, None)
+        t = time.monotonic()
+        if not now:
+            return None
+        prev, self._last = self._last, now
+        dt, self._t = t - self._t, t
+        if not prev:
+            return None
+        delta = ior.IOReportCreateSamplesDelta(prev, now, None)
+        cf.CFRelease(prev)
+        if not delta:
+            return None
+        try:
+            return {"dt": dt, **self._parse(delta)}
+        finally:
+            cf.CFRelease(delta)
+
+    @staticmethod
+    def _parse(delta: int) -> dict:
+        ior, cf = _ioreport(), _cf()
+        energy: dict[str, float] = {}
+        states: dict[str, list[tuple[str, int]]] = {}
+        arr = _dict_value(delta, "IOReportChannels")
+        scale = {"mJ": 1e-3, "uJ": 1e-6, "nJ": 1e-9}
+        for i in range(cf.CFArrayGetCount(arr) if arr else 0):
+            ch = cf.CFArrayGetValueAtIndex(arr, i)
+            name = _to_str(ior.IOReportChannelGetChannelName(ch)) or ""
+            group = _to_str(ior.IOReportChannelGetGroup(ch)) or ""
+            if group == "Energy Model":
+                unit = (_to_str(ior.IOReportChannelGetUnitLabel(ch)) or "").strip()
+                value = ior.IOReportSimpleGetIntegerValue(ch, 0)
+                if unit in scale and value >= 0:
+                    energy[name] = value * scale[unit]
+            elif ior.IOReportChannelGetFormat(ch) == 2:              # 狀態通道
+                n = ior.IOReportStateGetCount(ch)
+                states[name] = [(_to_str(ior.IOReportStateGetNameForIndex(ch, k)) or "", ior.IOReportStateGetResidency(ch, k))
+                                for k in range(max(0, n))]
+        return {"energy": energy, "states": states}
+
+    def close(self) -> None:
+        cf = _cf()
+        for ref in (self._last, self._sub):
+            if ref:
+                cf.CFRelease(ref)
+        self._last = self._sub = self._channels = None

@@ -10,8 +10,8 @@ from hwglance import system
 from hwglance.sensors import macio
 from hwglance.sensors.demo import MacDemo
 from hwglance.sensors.details import device_details
-from hwglance.sensors.mac import (BOARD_ID, CPU_ID, GPU_ID, Extremes, MacSource, Readings, build_tree, core_layout,
-                                  cpu_loads, memory_used, short_model)
+from hwglance.sensors.mac import (BOARD_ID, CPU_ID, GPU_ID, Extremes, MacSource, Readings, active_clock, build_tree,
+                                  clocks, core_layout, cpu_loads, memory_used, mhz, short_model, tier_of)
 from hwglance.sensors.normalize import APPLE_TJMAX, normalize
 from hwglance.sensors.service import ALL_FEATURES, SensorService
 from hwglance.sensors.demo import DemoSource
@@ -166,9 +166,32 @@ class BrokenAccelerator:
         raise OSError("找不到 GPU（IOAccelerator）")
 
 
+# 頻率表跟 IOReport 的樣子照 2026-11-11 那台 M6（節能核 7 階 kHz、效能核 20 階 kHz 只取前 3 階、GPU 表第一個是 0、單位 Hz）
+TABLES = {"voltage-states1-sram": [972000, 1152000, 1584000], "voltage-states5-sram": [1440000, 2040000, 4788000],
+          "voltage-states9": [0, 502000000, 1735000000]}
+
+
+class FakeIOReport:
+    def open(self):
+        pass
+
+    def sample(self):
+        return {"dt": 2.0, "energy": {"GPU Energy": 1.0},
+                "states": {"EACC_ECPU0": [("IDLE", 900), ("V0P2", 100), ("V1P1", 0), ("V2P0", 0)],
+                           "PACC0_PCPU0": [("IDLE", 500), ("V0P2", 0), ("V1P1", 0), ("V2P0", 500)],
+                           "GPUPH": [("OFF", 100), ("P1", 50), ("P2", 25), ("P3", 25)]}}
+
+    def close(self):
+        FakeIo.closed.append("ioreport")
+
+
 class FakeIo:
     closed: list[str] = []
-    Smc, HidTemps, Accelerator = FakeSmc, FakeHid, BrokenAccelerator
+    Smc, HidTemps, Accelerator, IOReport = FakeSmc, FakeHid, BrokenAccelerator, FakeIOReport
+
+    @staticmethod
+    def freq_tables():
+        return TABLES
 
     def __init__(self):
         self.ticks = [[(100, 0, 900, 0)] * 2, [(150, 0, 950, 0)] * 2]
@@ -212,13 +235,17 @@ def test_mac_source_reads_everything_it_can_and_reports_the_rest():
     snap = normalize(src.read())
     kinds = {d["kind"]: d for d in snap["devices"]}
     assert kinds["cpu"]["temps"][0]["value"] == 36.5 and kinds["cpu"]["stats"][0]["value"] == 50
-    assert kinds["gpu"]["stats"] == [] and kinds["gpu"]["temps"][0]["value"] == 34.2   # 使用率讀不到，溫度照樣有
+    # 時脈：節能核 100 在 972、效能核 500 在 4788 → (100×972＋500×4788)／600；FakeSmc 沒有 PSTR，整機功耗不列
+    assert {s["key"]: s["value"] for s in kinds["cpu"]["stats"]}["clock"] == round((100 * 972 + 500 * 4788) / 600)
+    gpu = {s["key"]: s["value"] for s in kinds["gpu"]["stats"]}
+    assert gpu == {"clock": round((50 * 502 + 50 * 1735) / 100), "power": 0.5}   # 使用率讀不到，時脈、功耗照樣有；1 J／2 秒
+    assert kinds["gpu"]["temps"][0]["value"] == 34.2
     assert kinds["storage"]["temps"][0]["value"] == 30.0 and kinds["memory"]["stats"][0]["value"] == pytest.approx(1.0)
     assert src.errors == ["GPU 使用率：找不到 GPU（IOAccelerator）"]          # 畫面上方會列出來
     assert src.specs()["cpu"] == {"cores": 2, "threads": 2, "layout": "1 效能核＋1 節能核"}
     assert src.specs()["disks"]["0"]["firmware"] == "3975.40." and "serial" not in str(src.specs())
     src.close()
-    assert FakeIo.closed == ["smc", "hid"]
+    assert FakeIo.closed == ["smc", "hid", "ioreport"]
 
 
 def test_service_snapshot_carries_features_and_no_windows_hints():
@@ -242,3 +269,35 @@ def test_mac_demo_has_the_same_shape_as_the_real_mac():
     service = SensorService(demo, env=ENV)
     service.tick()
     assert service.details(GPU_ID) is not None and service.snapshot()["source"]["features"] == ["tray", "events"]
+
+
+def test_clock_from_performance_state_residency():
+    assert mhz(972000) == 972.0 and mhz(1735000000) == 1735.0            # CPU 的表是 kHz、GPU 的是 Hz
+    assert active_clock([("IDLE", 10), ("V0P1", 30), ("V1P0", 10)], [1000000, 3000000]) == (40, 30 * 1000 + 10 * 3000)
+    # M6 的 GPU：15 個狀態、表只有 13 階 → 多出來的算最高那一階；OFF 不算
+    busy, weighted = active_clock([("OFF", 99), ("P1", 1), ("P2", 1), ("P3", 2)], [0, 500000000, 900000000])
+    assert (busy, weighted) == (4, 500 + 900 + 2 * 900)
+    assert active_clock([("IDLE", 5)], []) == (0.0, 0.0)
+    m6 = ["Super", "Performance", "Efficiency"]
+    assert [tier_of(c, m6) for c in ("EACC_ECPU0", "PACC0_PCPU1", "PACC0_MCPU2", "GPUPH")] == \
+        ["Efficiency", "Super", "Performance", None]
+    assert tier_of("PCPU3", ["Performance", "Efficiency"]) == "Performance"   # M1～M5 只有兩種
+    avg, tiers, gpu = clocks({"EACC_ECPU0": [("IDLE", 1), ("V0P2", 0)], "PACC0_PCPU0": [("IDLE", 1), ("V0P2", 4)],
+                              "GPUPH": [("OFF", 9)]}, TABLES, m6)
+    assert (avg, tiers, gpu) == (1440.0, {"Super": 1440.0}, None)           # 整段閒著的節能核、GPU 不列
+
+
+def test_clock_and_power_on_the_cards():
+    r = readings(clock=1627.4, tier_clocks={"Super": 1788.0, "Efficiency": 1588.0}, gpu_clock=502.0, gpu_power=0.36,
+                 system_power=9.04)
+    tree = build_tree(r, Extremes())
+    snap = normalize(tree)
+    kinds = {d["kind"]: d for d in snap["devices"]}
+    assert {s["key"]: s["value"] for s in kinds["cpu"]["stats"]}["clock"] == 1627
+    assert {s["key"]: (s["value"], s["unit"]) for s in kinds["gpu"]["stats"]}["power"] == (0.4, "W")   # 不到 1 W 寫小數
+    assert "power" not in {s["key"] for s in kinds["cpu"]["stats"]}        # CPU 功耗 M6 讀不到可靠的來源
+    cpu = device_details(tree, snap, CPU_ID, {})
+    clock_rows = {row["label"]: row["value"] for sec in cpu["sections"] if sec["title"] == "時脈" for row in sec["rows"]}
+    assert clock_rows == {"平均時脈": 1627, "超級核時脈": 1788, "節能核時脈": 1588}
+    body = device_details(tree, snap, BOARD_ID, {})
+    assert any(row["label"] == "整機功耗" for sec in body["sections"] for row in sec.get("rows") or [])

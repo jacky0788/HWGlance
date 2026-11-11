@@ -52,6 +52,7 @@ _RULES: list[tuple[str, str, str]] = [
     ("Temperature", r"Composite Temperature|Temperature", "溫度"),
     ("Temperature", r"Temperature #(\d+)", r"感測器 \1"),
     ("Temperature", r"DIMM #(\d+)", r"DIMM \1"),
+    ("Power", r"System Total", "整機功耗"),                  # Mac 的 SMC PSTR
     ("Fan", r"CPU Fan", "CPU 風扇"),
     ("Fan", r"CPU Optional Fan", "CPU 副風扇"),
     ("Fan", r"Chassis Fan #(\d+)", r"機殼風扇 \1"),

@@ -61,6 +61,9 @@ export function stat(s: Stat, kind: Kind): Shown {
       const total = s.total != null ? ` / ${one.format(s.total)}` : "";
       return { value: `${one.format(s.value)}${total}`, unit: "GB" };
     }
+    case "W":
+      // Apple 晶片的 GPU 常常不到 1 W，後端給到小數一位（normalize 的 Apple 規則）；Windows 給整數，照舊
+      return { value: Number.isInteger(s.value) ? int.format(s.value) : one.format(s.value), unit: "W", note: s.note };
     default:
       return { value: int.format(s.value), unit: s.unit, note: s.note };
   }

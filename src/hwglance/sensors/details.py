@@ -33,6 +33,7 @@ MEDIA_NAMES = {"nvme": "NVMe SSD", "ssd": "SATA SSD", "hdd": "機械硬碟"}
 PROCESS_MIN_BYTES = 100 * 2**20               # 顯存被誰佔用：只列超過 100 MB 的程式（使用者 2026-10-31）
 HEALTH_NAMES = {"healthy": "良好", "warning": "警告", "unhealthy": "不良"}
 
+TIER_TITLES = {"Super Cores": "超級核", "Performance Cores": "效能核", "Efficiency Cores": "節能核"}   # Mac
 CPU_HEAD_NOTES = {  # CPU 主溫度：(括號裡的名稱, 說明)
     "Core (Tctl/Tdie)": ("Tctl/Tdie", "AMD 官方的 CPU 溫度，已經平滑過；總覽與系統匣顯示的就是這個"),
     "Core (Tctl)": ("Tctl", "AMD 的控制溫度，有些型號會加偏移量，比實際高"),
@@ -289,6 +290,8 @@ def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
     clocks = [_reading(p.one("Clock", "Cores (Average)"), "平均時脈"),
               _reading(p.one("Clock", "Cores (Average Effective)"), "平均實際時脈", "扣掉核心休息的時間，比較接近實際在跑的速度"),
               _reading(p.one("Clock", "Bus Speed"), "匯流排")]
+    clocks += [_reading(s, f"{TIER_TITLES.get(s.name, s.name)}時脈", "這一種核心有在跑的時間平均")
+               for s in p.many("Clock", r"(?:Super|Performance|Efficiency) Cores")]              # Mac 的各種核心
     power = [_reading(p.one("Power", "Package", "CPU Package"), "整顆 CPU 功耗"),
              _reading(p.one("Power", "CPU Cores"), "核心功耗", "只算 CPU 核心，不含內顯與其他部分"),       # Intel
              _reading(p.one("Voltage", "Core (SVI2 TFN)", "CPU Core"), "核心電壓", "CPU 回報給主機板供電的核心電壓"),

@@ -463,12 +463,25 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
 - `mac` 分支的程式照樣能在 Windows 跑（平台差異靠 `source.features`、`sys.platform`），只是 Windows 版以 `main` 為準。
 - 推之前查過：三個 commit 的作者、提交者都是 GitHub 的匿名信箱，訊息與全部檔案沒有帳號名稱、家目錄路徑、電腦名稱、個人信箱、硬碟序號。
 
+### Mac：時脈與功耗（2026-11-11，M13）
+
+使用者看完「現在還缺什麼」後選「時脈與功耗」。
+
+| # | 決策 | 原因 |
+|---|---|---|
+| M13 | 時脈＝IOReport 各效能狀態的停留時間 × pmgr 頻率表，只算在跑的時間（CPU 平均、各種核心、GPU）；GPU 功耗＝IOReport `GPU Energy`；整台功耗＝SMC `PSTR`；**CPU 功耗不顯示**；Apple 的功耗卡片寫到小數一位 | M6 的 `Energy Model` 沒有 CPU；`PMP/Energy` 是直方圖、跟 GPU Energy 差三十幾倍；SMC 的 P 鍵意思沒公開。寧可不顯示也不要猜錯 |
+
+- 對照真機：閒置 CPU 平均約 1.6 GHz、GPU 502 MHz／0.3～0.4 W、整台 9 W；六個 `yes` 跑滿：超級核、效能核 4788 MHz（表的最高階）、節能核 2.5 GHz、整台 30 W。
+- 頻率表：CPU 的狀態數跟表一樣長（節能 7、效能／超級 20）；GPU 15 個狀態、表只有 13 階，多的算最高那階（還沒看到 GPU 跑到 P14、P15）。
+- 驗證：pytest 186 項（`tests/test_mac.py` 新增時脈計算、卡片與詳細資訊、假的 IOReport）、`npm run build` 通過；真機 `--serve` 看過卡片（CPU 2.5 GHz、GPU 503 MHz／0.3 W）與詳細資訊。
+  前端 `format.ts` 的 W 有小數才寫小數（Windows 給整數，照舊）。
+
 ## 還沒做／待確認
 
 - Mac 第 2 段的選單列：使用者自己點一次（字、顏色、選單、「開啟主畫面」「結束」）；第一次關視窗的通知沒看過。
 - Mac 事件記錄：等真的有一次核心錯誤時，看報告的格式跟 `parse_panic` 對不對得上；`kern.shutdownreason` 的其他代號遇到再補（M10）。
 - Mac 之後可以加：App 當掉（`~/Library/Logs/DiagnosticReports` 的 .ips，bug_type 309）。
-- Mac 之後：CPU／GPU 的時脈與功耗（IOReport）；GPU 門檻照真機調；其他 Apple 晶片（M3 的 SMC 用 Tf）沒有真機驗。
+- Mac 之後：CPU 功耗（等找到可靠的來源）；GPU 門檻照真機調；其他 Apple 晶片（M3 的 SMC 用 Tf）沒有真機驗。
 - 兩條分支要合的時候：家用機 11-07 的 D34～D36 先推上 `main`，再把 `mac` 合過去（`normalize.py`、`details.py`、`format.ts`、`tests/test_blackbox.py` 兩邊都有改）。
 
 - 真機看第 10 段③：重開 HWGlance（系統管理員）→「暫存檔」→ 掃描，看數字合不合理、被鎖住的是哪些程式；要刪時自己按。
