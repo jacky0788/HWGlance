@@ -8,6 +8,7 @@ import { StorageCard } from "../features/devices/StorageCard";
 import { DetailDialog } from "../features/details/DetailDialog";
 import { Overview } from "../features/overview/Overview";
 import { Footer, Notes } from "../features/status/StatusBar";
+import { hasFeature } from "../lib/features";
 import type { Series } from "../lib/useHistory";
 import type { Snapshot } from "../types";
 
@@ -33,7 +34,12 @@ export function Dashboard({ snap, series, offline }: { snap: Snapshot; series: S
             <div className="space-y-3 min-w-0">{side.map((d) => <BoardCard key={d.id} device={d} onOpen={setDetailId} />)}</div>
           ) : null}
           {memory.length > 0 ? (
-            <div className="space-y-3 min-w-0">{memory.map((d) => <MemoryCard key={d.id} device={d} onOpen={setDetailId} />)}</div>
+            <div className="space-y-3 min-w-0">
+              {memory.map((d) => (
+                <MemoryCard key={d.id} device={d} breakdown={hasFeature(snap, "memory")}
+                  unified={snap.devices.some((x) => x.id.startsWith("/apple"))} onOpen={setDetailId} />
+              ))}
+            </div>
           ) : null}
           {drives.length > 0 ? <StorageCard drives={drives} onOpen={setDetailId} /> : null}
         </div>

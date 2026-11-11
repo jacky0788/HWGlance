@@ -78,7 +78,8 @@ def _u32():
     return u
 
 
-_ENUM_PROC = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+# Mac 沒有 WINFUNCTYPE：換成 CFUNCTYPE 只是讓這個檔 import 得起來（api/app.py 要 ProcessError），Mac 不會呼叫到
+_ENUM_PROC = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(wt.BOOL, wt.HWND, wt.LPARAM)
 
 
 def created_at(pid: int) -> str | None:

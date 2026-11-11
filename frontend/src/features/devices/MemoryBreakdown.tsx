@@ -24,10 +24,12 @@ const stop = (e: MouseEvent) => {
   e.stopPropagation();
 };
 
-export function useMemoryStatus(): [MemoryStatus | null, () => void] {
+// enabled＝false：這台沒有記憶體組成（Mac 版），不抓
+export function useMemoryStatus(enabled = true): [MemoryStatus | null, () => void] {
   const [status, setStatus] = useState<MemoryStatus | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => {
+    if (!enabled) return undefined;
     let cancelled = false;
     let timer: number | undefined;
     const load = async () => {
@@ -46,8 +48,8 @@ export function useMemoryStatus(): [MemoryStatus | null, () => void] {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [tick]);
-  return [status, () => setTick((t) => t + 1)];
+  }, [tick, enabled]);
+  return [enabled ? status : null, () => setTick((t) => t + 1)];
 }
 
 function ReleaseResult({ r }: { r: MemoryRelease }) {

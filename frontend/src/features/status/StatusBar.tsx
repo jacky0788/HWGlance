@@ -1,5 +1,6 @@
 // 頂端列（名稱、即時監控／事件記錄分頁、權限／驅動狀態）、提醒（為什麼有些溫度讀不到）、底部（更新時間、讀取耗時）。
 import { Activity, FolderLock, PictureInPicture2, ScrollText, Settings, ShieldAlert, TriangleAlert } from "lucide-react";
+import { hasFeature } from "../../lib/features";
 import { clockTime } from "../../lib/format";
 import type { EventBadge } from "../events/useEvents";
 import type { Snapshot } from "../../types";
@@ -18,8 +19,10 @@ function Chip({ ok, children }: { ok: boolean; children: string }) {
 const barButton =
   "inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg-muted hover:border-line-strong hover:text-fg cursor-pointer";
 
-// 分頁用網址的 #live／#events／#temp 切換（App.tsx 的 usePage），重新整理也還在同一頁
-function PageTabs({ page, badge }: { page: Page; badge: EventBadge | null }) {
+// 分頁用網址的 #live／#events／#temp 切換（App.tsx 的 usePage），重新整理也還在同一頁。
+// 這台沒有的頁不列；只剩即時監控一頁時（Mac 版）整排分頁都不放
+function PageTabs({ page, badge, events, temp }: { page: Page; badge: EventBadge | null; events: boolean; temp: boolean }) {
+  if (!events && !temp) return null;
   const tab = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${active ? "bg-surface-2 text-fg font-semibold" : "text-fg-muted hover:text-fg"}`;
   return (
@@ -27,18 +30,22 @@ function PageTabs({ page, badge }: { page: Page; badge: EventBadge | null }) {
       <a href="#live" aria-current={page === "live" ? "page" : undefined} className={tab(page === "live")}>
         <Activity className="size-3.5" aria-hidden /> 即時監控
       </a>
-      <a href="#events" aria-current={page === "events" ? "page" : undefined} className={tab(page === "events")}
-        title={badge?.title}>
-        <ScrollText className="size-3.5" aria-hidden /> 事件記錄
-        {badge ? (
-          <span className={`level-${badge.level} rounded-full bg-(--level-soft) px-1.5 font-semibold text-(--level) num`}>
-            {badge.count}<span className="sr-only"> 件要注意（最近 7 天）</span>
-          </span>
-        ) : null}
-      </a>
-      <a href="#temp" aria-current={page === "temp" ? "page" : undefined} className={tab(page === "temp")}>
-        <FolderLock className="size-3.5" aria-hidden /> 暫存檔
-      </a>
+      {events ? (
+        <a href="#events" aria-current={page === "events" ? "page" : undefined} className={tab(page === "events")}
+          title={badge?.title}>
+          <ScrollText className="size-3.5" aria-hidden /> 事件記錄
+          {badge ? (
+            <span className={`level-${badge.level} rounded-full bg-(--level-soft) px-1.5 font-semibold text-(--level) num`}>
+              {badge.count}<span className="sr-only"> 件要注意（最近 7 天）</span>
+            </span>
+          ) : null}
+        </a>
+      ) : null}
+      {temp ? (
+        <a href="#temp" aria-current={page === "temp" ? "page" : undefined} className={tab(page === "temp")}>
+          <FolderLock className="size-3.5" aria-hidden /> 暫存檔
+        </a>
+      ) : null}
     </nav>
   );
 }
@@ -60,7 +67,7 @@ export function TopBar({ snap, page, badge, onMini, onSettings }: {
           strokeDasharray="36 75.4" transform="rotate(135 16 16)" strokeLinecap="round" />
       </svg>
       <h1 className="m-0 text-base font-semibold">HWGlance</h1>
-      <PageTabs page={page} badge={badge} />
+      <PageTabs page={page} badge={badge} events={hasFeature(snap, "events")} temp={hasFeature(snap, "temp")} />
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {source?.kind === "demo" ? <Chip ok={false}>示範資料</Chip> : null}
         {source?.kind === "lhm" ? (
@@ -69,9 +76,11 @@ export function TopBar({ snap, page, badge, onMini, onSettings }: {
             <Chip ok={source.pawnio != null}>{source.pawnio ? `PawnIO ${source.pawnio}` : "PawnIO 未安裝"}</Chip>
           </>
         ) : null}
-        <button type="button" onClick={onMini} className={barButton} title="換成疊在遊戲上的小視窗（右鍵它可以展開主畫面）">
-          <PictureInPicture2 className="size-3.5" aria-hidden /> 迷你模式
-        </button>
+        {hasFeature(snap, "mini") ? (
+          <button type="button" onClick={onMini} className={barButton} title="換成疊在遊戲上的小視窗（右鍵它可以展開主畫面）">
+            <PictureInPicture2 className="size-3.5" aria-hidden /> 迷你模式
+          </button>
+        ) : null}
         <button type="button" onClick={onSettings} className={barButton}>
           <Settings className="size-3.5" aria-hidden /> 設定
         </button>
@@ -127,6 +136,7 @@ export function Footer({ snap }: { snap: Snapshot }) {
     `每 ${snap.interval} 秒更新`,
     snap.perf.readMs != null ? `讀取 ${snap.perf.readMs} ms` : null,
     snap.source.kind === "lhm" && snap.source.version ? `LibreHardwareMonitor ${snap.source.version}` : null,
+    snap.source.kind === "mac" && snap.source.version ? `macOS ${snap.source.version}` : null,
     `最後更新 ${clockTime(snap.time)}`,
   ].filter(Boolean);
   return <footer className="px-5 pb-4 text-xs text-fg-subtle num">{parts.join("・")}</footer>;

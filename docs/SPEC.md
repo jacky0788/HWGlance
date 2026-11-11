@@ -392,7 +392,34 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
   關掉假程式 → 重新掃描 → 刪得掉；下次開機刪除用假函式，只排允許的那個資料夾）、`npm run build` 通過；示範資料 1024 深色、375 淺色點過
   （掃描、關掉 Discord 後自動重掃、下次開機刪除、刪除可以刪的）。**沒有掃、也沒有刪這台真的暫存資料夾**（使用者自己按）。
 
+### Mac 版第 1 段：讀數層＋即時監控頁（2026-11-11，M1）
+
+使用者 2026-11-11 問能不能做 Mac 版，評估後分三段：①讀數層＋即時監控頁 ②選單列圖示、App 包裝、Mac 外觀 ③當機報告與上次關機原因。
+使用者說「開始做第 1 段」。在 Mac 的 clone（`feat/macos` 分支）做，**從 GitHub 的 e95e9ca 開始**：家用機 11-07 的 D34～D36 還沒推上去，
+所以 Mac 的決策用 M 編號，免得跟家用機的 D 編號撞號；合併時兩邊都要留。
+
+| # | 決策 | 原因 |
+|---|---|---|
+| M1 | Mac 讀 SMC（`sensors/macio.py`，ctypes，一般權限）：Tp＝效能核心區、Te＝節能核心區、Tg＝GPU、TB?T＝電池、F?Ac＝風扇；SSD 溫度讀 HID 的「NAND」感測器；CPU 使用率 `host_processor_info`、GPU 使用率 IOAccelerator、記憶體 `host_statistics64`（照活動監視器算）；整理成跟 LHM 一樣的硬體樹（`sensors/mac.py` 的 `build_tree`），normalize、詳細資訊、歷史、黑盒子都照用 | Apple 晶片的 SMC 鍵有分哪一塊、一般權限就讀得到，HID 的溫度沒有分 CPU／GPU；不用驅動、不用 sudo（`powermetrics` 要 sudo） |
+| M2 | 卡片放最高、平均（CPU 另有效能核心最高、節能核心最高），每個 SMC 量測點只放詳細資訊（`normalize.APPLE_POINT`） | M6 有 21＋9 個 CPU 量測點、18 個 GPU 量測點，但只有 12 核心：點不是核心，全部列在卡片上看不懂 |
+| M3 | 門檻：Apple 晶片 CPU 照暫定的降頻溫度 105°C（`normalize.APPLE_TJMAX` → 90／100），電池 40／45（新的溫度種類 `battery`）；GPU 先照預設 80／88 | Apple 沒公開降頻溫度，滿載常到 95～105°C，用 80／90 會一直亮紅燈；都是暫定，之後照真機調 |
+| M4 | 功能跟著來源走：快照的 `source.features`（`service.ALL_FEATURES`），Mac 是空的 → 不開事件記錄、暫存檔、迷你模式、系統匣、記憶體組成、關閉程式，前端藏起那些分頁、按鈕與設定（`lib/features.ts`）；Windows 的來源沒寫就是全部，跟以前一樣 | Mac 版一段一段補；用旗標而不是看作業系統，示範資料（`--demo-profile mac`）也能照真的 Mac 顯示 |
+
+- 真機（MacBook Pro 14 吋 M6、macOS 27.2，12 核心＝2 超級核＋4 效能核＋6 節能核、GPU 12 核、32 GB、1 TB）：SMC 3209 個鍵、159 個溫度；
+  列鍵 26 ms、每輪讀 51 個鍵 7 ms，整輪 9 ms。閒置 CPU 約 36～41°C、GPU 35～39°C、電池 26.5°C、SSD 30°C、風扇停轉（0 RPM，最低 2000、最高 8250）。
+- Windows 的模組在 Mac 上 import 不起來的兩處（`processes.py`、`mini/window.py` 的 `WINFUNCTYPE`）改成沒有就用 `CFUNCTYPE`（Mac 不會呼叫）；
+  `ui.py` 的深淺色改成 Mac 看 `AppleInterfaceStyle`；`system.has_webview()`（Mac 內建 WKWebView）；`pythonnet` 只在 Windows 裝。
+- 順手修：`tests/test_blackbox.py` 三個寫檔的測試用固定日期，開新一天的檔時會刪「離今天超過 7 天」的檔——11-08 之後連 Windows 也會刪掉測試剛寫的檔（Mac 連開著的檔都刪得掉），改成那三個測試不刪舊檔（刪舊檔另有測試）。
+- 驗證：pytest 172 項（新增 `tests/test_mac.py` 12 項：SMC 解碼、CPU 使用率含計數器繞回、記憶體、硬體樹 → 畫面、門檻、詳細資訊、假 io 的 MacSource、
+  MacDemo；全部假讀數，Windows 也能跑）、`npm run build` 通過；真機 `--serve` 用瀏覽器看過總覽、卡片、CPU 詳細資訊、設定頁；
+  桌面視窗（pywebview＋WKWebView）開得起來、用 `/api/app/quit` 結束後程序收乾淨、黑盒子有寫檔。
+
 ## 還沒做／待確認
+
+- Mac 第 2 段：選單列圖示（顯示 CPU 溫度）、記憶庫.app 那種 App 包裝（Dock 現在顯示 Python）、Mac 外觀；設定頁的門檻只列 Mac 有的種類；`run.sh`。
+- Mac 第 3 段：當機（panic）報告、上次關機原因（事件記錄頁）。
+- Mac 之後：CPU／GPU 的時脈與功耗（IOReport）；GPU 門檻照真機調；其他 Apple 晶片（M3 的 SMC 用 Tf）沒有真機驗。
+- 合併：家用機 11-07 的 D34～D36 推上去後，跟 `feat/macos` 合併（`normalize.py`、`details.py`、`format.ts`、`tests/test_blackbox.py` 兩邊都有改）。
 
 - 真機看第 10 段③：重開 HWGlance（系統管理員）→「暫存檔」→ 掃描，看數字合不合理、被鎖住的是哪些程式；要刪時自己按。
 - 真機看第 10 段②：重開 HWGlance（系統管理員）後看記憶體卡片的組成跟工作管理員對不對得上；自己按一次「釋放記憶體」，看結果與 `data/actions.log`。

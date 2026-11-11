@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -43,6 +44,14 @@ def taskbar_identity() -> None:
 
 
 def system_is_dark() -> bool:
+    """視窗底色（網頁載入前那一下）要跟系統的深淺色一樣。Mac 看「外觀」設定（深色時 AppleInterfaceStyle＝Dark）。"""
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleInterfaceStyle"],
+                                 capture_output=True, text=True, timeout=3, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return out.stdout.strip() == "Dark"
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,

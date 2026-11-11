@@ -28,7 +28,17 @@ class Source(Protocol):
     def update(self, slow: bool = True) -> None: ...
     def read(self) -> list[RawHardware]: ...
     def close(self) -> None: ...
-    # 可以沒有：errors（讀失敗的訊息）、notes()（畫面上方的提醒）、specs()、gpu_processes()
+    # 可以沒有：errors（讀失敗的訊息）、notes()（畫面上方的提醒）、specs()、gpu_processes()、
+    # features（這台有哪些功能，沒寫就是 ALL_FEATURES；Mac 版是空的）
+
+
+# 跟著來源走的功能（快照的 source.features，前端照它藏分頁與按鈕；core.run 照它決定開哪些服務）：
+# events＝事件記錄頁、temp＝暫存檔頁、mini＝迷你模式、tray＝系統匣、memory＝記憶體組成與釋放、processes＝關閉程式
+ALL_FEATURES = ("events", "temp", "mini", "tray", "memory", "processes")
+
+
+def features_of(source) -> tuple[str, ...]:
+    return tuple(getattr(source, "features", ALL_FEATURES))
 
 
 def dumps(obj) -> bytes:
@@ -223,12 +233,12 @@ class SensorService:
             notes.append(self._error)
         notes.extend(f"讀取失敗：{e}" for e in errors[:3])
         return {"kind": self.source.kind, "version": self.source.version, "admin": env["admin"],
-                "pawnio": env["pawnio"], "notes": notes}
+                "pawnio": env["pawnio"], "notes": notes, "features": list(features_of(self.source))}
 
     def _empty(self) -> dict:
         return {"seq": 0, "time": None, "interval": self.interval, "state": self._state,
                 "source": {"kind": self.source.kind, "version": None, "admin": False, "pawnio": None,
-                           "notes": [self._error] if self._error else []},
+                           "notes": [self._error] if self._error else [], "features": list(features_of(self.source))},
                 "perf": {}, "prefs": dict(self.prefs), "devices": [], "overview": []}
 
     def _set_failed(self, message: str) -> None:

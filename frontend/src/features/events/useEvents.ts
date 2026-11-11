@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "../../lib/api";
 import type { EventCategory, EventReport } from "../../types";
 
-export function useEventReport(days: number, everyMs: number): {
+// enabled＝false：這台沒有事件記錄（Mac 版），完全不抓
+export function useEventReport(days: number, everyMs: number, enabled = true): {
   report: EventReport | null; // 換範圍時先留著上一份，畫面不會閃
   error: string | null;
   loading: boolean;
@@ -14,6 +15,7 @@ export function useEventReport(days: number, everyMs: number): {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     let stopped = false;
     let busy = false;
     let timer = 0;
@@ -56,7 +58,7 @@ export function useEventReport(days: number, everyMs: number): {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [days, everyMs]);
+  }, [days, everyMs, enabled]);
 
   return { report, error, loading };
 }
@@ -70,8 +72,8 @@ export interface EventBadge {
 const BADGE_PARTS: [EventCategory, string][] = [["crash", "當機"], ["gpu", "顯示卡"], ["storage", "硬碟"], ["hardware", "CPU／記憶體"]];
 
 // 頂端列「事件記錄」旁的數字：最近 7 天要特別注意的事（當機、硬碟斷線、顯示卡致命錯誤…），沒有就不顯示
-export function useEventBadge(): EventBadge | null {
-  const { report } = useEventReport(7, 5 * 60_000);
+export function useEventBadge(enabled = true): EventBadge | null {
+  const { report } = useEventReport(7, 5 * 60_000, enabled);
   const major = report?.incidents.filter((i) => i.major) ?? [];
   if (major.length === 0) return null;
   const parts = BADGE_PARTS.map(([cat, label]) => [label, major.filter((i) => i.category === cat).length] as const)

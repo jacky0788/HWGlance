@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterable
 
 from .labels import label
 from .model import RawHardware, RawSensor
-from .normalize import CPU_HEADLINE, DISTANCE, STORAGE_HEADLINE, cpu_tjmax, shown_min, valid_temp
+from .normalize import APPLE, CPU_HEADLINE, DISTANCE, STORAGE_HEADLINE, cpu_tjmax, shown_min, valid_temp
 
 UNITS = {"Voltage": "V", "Current": "A", "Power": "W", "Clock": "MHz", "Load": "%", "Frequency": "Hz", "Fan": "RPM",
          "Flow": "L/h", "Control": "%", "Level": "%", "Data": "GB", "SmallData": "MB", "Throughput": "B/s",
@@ -259,6 +259,7 @@ def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
         _row("型號", dev["name"]),
         _row("腳位", cpu["socket"]) if cpu.get("socket") else None,
         _row("核心／執行緒", f'{cpu["cores"]} 核心、{cpu["threads"]} 執行緒') if cpu.get("cores") and cpu.get("threads") else None,
+        _row("核心種類", cpu["layout"]) if cpu.get("layout") else None,       # Mac：2 超級核＋4 效能核＋6 節能核
         _row("最高時脈", round(cpu["maxMHz"] / 1000, 2), "GHz", "BIOS 回報的值，不一定等於官方規格") if cpu.get("maxMHz") else None,
         _row("快取", _caches(caches)) if caches else None,
     ]
@@ -271,8 +272,10 @@ def _cpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
     p.many("Temperature", r".*" + re.escape(DISTANCE))   # Intel 每個核心「離 TjMax 還差幾度」：不是溫度，換成下面那一行
     tjmax = cpu_tjmax(parts[0])
     if tjmax is not None:
+        apple = parts[0].id.startswith(APPLE)
         temps.append({"label": "降頻溫度（TjMax）", "value": tjmax, "unit": "°C", "temp": True,
-                      "note": "到這個溫度 CPU 就會降頻保護自己（從 CPU 讀的）；HWGlance 的門檻照它算"})
+                      "note": "Apple 沒有公開，HWGlance 暫定的值；門檻照它算" if apple
+                      else "到這個溫度 CPU 就會降頻保護自己（從 CPU 讀的）；HWGlance 的門檻照它算"})
     for i, s in enumerate(p.many("Temperature", r"CCD.*")):
         temps.append(_temp(s, f"{label('Temperature', s.name)}（瞬間）", levels,
                            None if i else "CPU 晶片當下的溫度，每秒會跳 20～30°C，是正常的；看 CPU 溫度就好"))
@@ -305,6 +308,8 @@ def _gpu(dev: dict, parts: list[RawHardware], tree: list[RawHardware], specs: di
     released = f'{info["driverDate"]} 發行' if info.get("driverDate") else None
     spec = [_row("型號", hw.name),
             _row("顯存容量", round(total.value / 1024), "GB") if total is not None and total.value else None,
+            _row("GPU 核心數", info["cores"], note="Apple 晶片的 GPU 跟 CPU 共用記憶體，沒有自己的顯存")
+            if info.get("cores") else None,
             _row("驅動版本", info["driver"], note=released) if info.get("driver") else None]
     temps = [_temp(p.one("Temperature", "GPU Core"), "核心", levels, "顯示卡晶片的溫度"),
              _temp(p.one("Temperature", "GPU Hot Spot"), "熱點", levels, "晶片上最熱的一點，比核心高 10～15°C 是正常的"),

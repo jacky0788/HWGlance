@@ -8,12 +8,13 @@
     python -m hwglance --serve --demo --demo-gpu-reset 20   # 示範資料，開啟 20 秒後模擬顯示卡重設
                                                             # （看暫停讀取、1 分鐘後重新連上的畫面）
     python -m hwglance --serve --demo --demo-profile intel-laptop   # 示範另一種電腦（Intel 筆電）
+    python -m hwglance --serve --demo --demo-profile mac            # 示範 Mac（Apple M6 MacBook Pro）
     python -m hwglance --serve          # 只跑伺服器、真的讀數，用瀏覽器看
     python -m hwglance --activate       # 已經開著：叫出它的視窗並回傳 0；沒開著回傳 1（run.bat 用）
     python -m hwglance.probe            # 探測：列出讀得到的所有感測器（probe.bat）
 
-伺服器一律只綁 127.0.0.1，預設埠 8796（被占用就換一個）。CPU、主機板、硬碟的溫度要 PawnIO 驅動
-＋系統管理員才讀得到；沒有的話照樣能開，只是少了那些。
+伺服器一律只綁 127.0.0.1，預設埠 8796（被占用就換一個）。Windows 的 CPU、主機板、硬碟溫度要 PawnIO 驅動
+＋系統管理員才讀得到；沒有的話照樣能開，只是少了那些。Mac（Apple 晶片）一般權限就讀得到（sensors/mac.py）。
 """
 from __future__ import annotations
 
@@ -32,8 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--demo", action="store_true", help="用示範資料（不碰硬體）")
     ap.add_argument("--demo-gpu-reset", type=float, default=None, metavar="SECONDS",
                     help="示範資料：開啟幾秒後模擬顯示卡重設（看暫停與重新連上的畫面）")
-    ap.add_argument("--demo-profile", choices=("this-pc", "intel-laptop"), default="this-pc",
-                    help="示範哪一種電腦：this-pc＝這台（AMD＋NVIDIA 桌機）、intel-laptop＝Intel 筆電")
+    ap.add_argument("--demo-profile", choices=("this-pc", "intel-laptop", "mac"), default="this-pc",
+                    help="示範哪一種電腦：this-pc＝這台（AMD＋NVIDIA 桌機）、intel-laptop＝Intel 筆電、mac＝Apple M6 MacBook Pro")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"埠（預設 {DEFAULT_PORT}）")
     ap.add_argument("--mode", choices=("main", "mini", "settings"), default="main",
                     help="開哪一種：主畫面、迷你模式、主畫面＋設定頁")

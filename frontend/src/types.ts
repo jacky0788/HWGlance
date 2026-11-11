@@ -58,12 +58,16 @@ export interface Tile {
   role: string;
 }
 
+// 跟著來源走的功能（後端 sensors/service.py 的 ALL_FEATURES）：Mac 版還沒有事件記錄、暫存檔、迷你模式、系統匣
+export type Feature = "events" | "temp" | "mini" | "tray" | "memory" | "processes";
+
 export interface Source {
-  kind: "lhm" | "demo";
-  version: string | null;
+  kind: "lhm" | "demo" | "mac";
+  version: string | null; // LHM 的版本；Mac 是 macOS 的版本
   admin: boolean;
   pawnio: string | null;
   notes: string[];
+  features?: Feature[];
 }
 
 export type Unit = "C" | "F";

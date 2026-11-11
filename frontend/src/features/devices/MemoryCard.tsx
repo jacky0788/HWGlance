@@ -1,16 +1,22 @@
 // 記憶體：組成長條＋「釋放記憶體」（MemoryBreakdown，讀 /api/memory）；那個抓不到時退回只有用量條。
 // 有的話再列每條 DIMM 的溫度（DDR4 大多沒有溫度感測器）。
+// breakdown＝這台有記憶體組成與釋放（Mac 版沒有）；unified＝Apple 晶片，記憶體跟 CPU、GPU 在同一顆晶片上。
 import { MemoryStick } from "lucide-react";
 import { Card } from "../../components/Card";
 import { TempRow } from "../../components/Readout";
 import type { Device } from "../../types";
 import { MemoryBreakdown, useMemoryStatus } from "./MemoryBreakdown";
 
-export function MemoryCard({ device, onOpen }: { device: Device; onOpen: (id: string) => void }) {
+export function MemoryCard({ device, breakdown = true, unified = false, onOpen }: {
+  device: Device;
+  breakdown?: boolean;
+  unified?: boolean;
+  onOpen: (id: string) => void;
+}) {
   const used = device.stats.find((s) => s.key === "used");
   const load = device.stats.find((s) => s.key === "load");
   const percent = load?.value ?? (used?.total ? (used.value / used.total) * 100 : null);
-  const [status, refresh] = useMemoryStatus();
+  const [status, refresh] = useMemoryStatus(breakdown);
   return (
     <Card kind="memory" icon={MemoryStick} title={device.name} onOpen={() => onOpen(device.id)}
       sub={used?.total != null ? `${used.total.toFixed(1)} GB` : undefined}>
@@ -38,7 +44,11 @@ export function MemoryCard({ device, onOpen }: { device: Device; onOpen: (id: st
       {device.temps.length > 0 ? (
         <ul className="mt-3 mb-0 p-0 list-none">{device.temps.map((t) => <TempRow key={t.id} t={t} />)}</ul>
       ) : (
-        <p className="mt-3 mb-0 text-xs text-fg-subtle">記憶體沒有回報溫度（DDR4 大多沒有溫度感測器）</p>
+        <p className="mt-3 mb-0 text-xs text-fg-subtle">
+          {unified
+            ? "記憶體跟 CPU、GPU 在同一顆晶片上，沒有自己的溫度，看 CPU 就好"
+            : "記憶體沒有回報溫度（DDR4 大多沒有溫度感測器）"}
+        </p>
       )}
     </Card>
   );

@@ -50,9 +50,11 @@ function ColorPicker({ name, value, fallback, presets, onChange }: {
   );
 }
 
-export function SettingsDialog({ open, section, onClose }: {
+export function SettingsDialog({ open, section, tray = true, mini: hasMini = true, onClose }: {
   open: boolean;
   section?: string; // 打開時捲到哪一段（mini＝迷你模式，從迷你模式的右鍵選單來的）
+  tray?: boolean; // 這台有系統匣（Mac 版還沒有）：沒有就不列「關掉視窗時」
+  mini?: boolean; // 這台有迷你模式（Mac 版還沒有）：沒有就不列那一段
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -179,12 +181,16 @@ export function SettingsDialog({ open, section, onClose }: {
               <span className="text-fg-muted">更新頻率</span>
               <Segmented label="更新頻率" value={refresh} onChange={setRefresh}
                 options={data.intervals.map((s) => ({ value: s, text: `${s} 秒` }))} />
-              <span className="text-fg-muted">關掉視窗時</span>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={closeToTray} onChange={(e) => setCloseToTray(e.target.checked)}
-                  className="size-4 accent-(--accent)" />
-                留在系統匣繼續監控（圖示上的數字就是 CPU 溫度）
-              </label>
+              {tray ? (
+                <>
+                  <span className="text-fg-muted">關掉視窗時</span>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={closeToTray} onChange={(e) => setCloseToTray(e.target.checked)}
+                      className="size-4 accent-(--accent)" />
+                    留在系統匣繼續監控（圖示上的數字就是 CPU 溫度）
+                  </label>
+                </>
+              ) : null}
             </section>
 
             <section>
@@ -234,8 +240,10 @@ export function SettingsDialog({ open, section, onClose }: {
               </div>
             </section>
 
-            <MiniSection value={mini ?? data.mini} defaults={data.miniDefaults} catalog={data.miniCatalog}
-              range={data.miniRange} fps={data.fps} hotkeys={data.hotkeys} onChange={setMini} />
+            {hasMini ? (
+              <MiniSection value={mini ?? data.mini} defaults={data.miniDefaults} catalog={data.miniCatalog}
+                range={data.miniRange} fps={data.fps} hotkeys={data.hotkeys} onChange={setMini} />
+            ) : null}
             {error ? <p role="alert" className="m-0 text-sm text-hot">{error}</p> : null}
           </div>
         )}

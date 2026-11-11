@@ -12,6 +12,9 @@ from hwglance.sensors.demo import DemoSource
 from hwglance.sensors.normalize import normalize
 
 NOW = 1_793_420_000.0
+# 寫檔的測試用固定日期（2026-10-31、11-01）：開新的一天的檔時會順便刪掉「離今天超過 7 天」的檔，
+# 過了那幾天就會把測試剛寫的檔刪掉（Mac 連開著的檔都刪得掉）。刪舊檔另外用 prune(today=…) 測
+KEEP_ALL = 100_000
 CPU = "/amdcpu/0/temperature/2"
 GPU = "/gpu-nvidia/0/temperature/0"
 
@@ -29,7 +32,7 @@ def lines(path) -> list:
 
 
 def test_records_every_two_seconds_with_a_header(tmp_path):
-    box = BlackBox(tmp_path)
+    box = BlackBox(tmp_path, keep_days=KEEP_ALL)
     t0 = datetime(2026, 11, 1, 12, 0, 0).timestamp()
     for i in range(5):                                  # 讀數每秒一份
         box.record(snapshot(t0 + i))
@@ -45,7 +48,7 @@ def test_records_every_two_seconds_with_a_header(tmp_path):
 
 
 def test_new_header_when_hardware_changes_and_a_new_file_each_day(tmp_path):
-    box = BlackBox(tmp_path)
+    box = BlackBox(tmp_path, keep_days=KEEP_ALL)
     t0 = datetime(2026, 10, 31, 23, 59, 56).timestamp()
     box.record(snapshot(t0))
     box.record(snapshot(t0 + 2, gpu=False))
@@ -68,7 +71,7 @@ def test_prune_keeps_seven_days_and_only_touches_its_own_files(tmp_path):
 
 
 def test_read_marks_gaps_and_skips_a_half_written_line(tmp_path):
-    box = BlackBox(tmp_path)
+    box = BlackBox(tmp_path, keep_days=KEEP_ALL)
     t0 = datetime(2026, 11, 1, 2, 0, 0).timestamp()
     for i in range(11):
         box.record(snapshot(t0 + 2 * i))

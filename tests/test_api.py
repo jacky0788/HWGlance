@@ -46,7 +46,8 @@ def test_snapshot(client):
     snap = r.json()
     assert snap["seq"] == 1 and len(snap["overview"]) == 10
     assert snap["source"] == {"kind": "demo", "version": "demo", "admin": True, "pawnio": "2.2.0",
-                              "notes": ["示範資料：數字是模擬的，不是這台電腦的讀數"]}
+                              "notes": ["示範資料：數字是模擬的，不是這台電腦的讀數"],
+                              "features": ["events", "temp", "mini", "tray", "memory", "processes"]}
 
 
 def test_history_and_sensors(client):

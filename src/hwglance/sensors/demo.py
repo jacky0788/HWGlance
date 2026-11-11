@@ -431,4 +431,57 @@ class IntelLaptopDemo(DemoSource):
         ])
 
 
-PROFILES = {"this-pc": DemoSource, "intel-laptop": IntelLaptopDemo}
+class MacDemo(DemoSource):
+    """Mac 的示範（--demo-profile mac）：照 2026-11-11 那台 MacBook Pro 14 吋 M6 的 SMC（效能核心區 21 個點、節能核心區 9 個、
+    GPU 18 個、電池 3 個、1 個風扇且閒置時停轉）、12 核心（2 超級核＋4 效能核＋6 節能核）、32 GB、1 TB SSD。
+    硬體樹跟真的 Mac 一樣走 mac.build_tree；沒有顯存排行、事件記錄、暫存檔、迷你模式（Mac 版還沒有）。"""
+
+    features: tuple[str, ...] = ()
+    gpu_processes = None                         # Apple 晶片沒有顯存，不列「顯存被誰佔用」
+    P_POINTS, E_POINTS, G_POINTS, CORES = 21, 9, 18, 12
+
+    def __init__(self, *args, **kwargs) -> None:
+        from .mac import Extremes
+        self._mac_sensor = Extremes()
+        self._fan = _Lag(0.0, 8.0)
+        self._battery = _Lag(27.0, 300.0)
+        self._ssd = _Lag(30.0, 120.0)
+        super().__init__(*args, **kwargs)
+
+    def update(self, slow: bool = True) -> None:
+        super().update(slow)
+        v = self._v
+        now = self._clock()
+        dt = min(5.0, max(0.05, now - v.get("mac_t", now)))
+        v["mac_t"] = now
+        # Apple 晶片閒置約 35°C、滿載效能核心區 90°C 上下；風扇 70°C 以下停轉
+        v["mac_cpu"] = 35.0 + (v["cpu"] - 48.0) * 55.0 / 38.0
+        v["mac_gpu"] = 34.0 + (v["gpu"] - 48.0) * 40.0 / 26.0
+        v["mac_fan"] = self._fan.step(0.0 if v["mac_cpu"] < 70 else 2000.0 + 150.0 * (v["mac_cpu"] - 70), dt)
+        v["mac_battery"] = self._battery.step(27.0 + 6.0 * v["cpu_load"], dt)
+        if slow:
+            v["mac_ssd"] = self._ssd.step(30.0 + 8.0 * v["cpu_load"], dt * 10)
+
+    def read(self) -> list[RawHardware]:
+        from .mac import Readings, build_tree
+        v, rng = self._v, self._rng
+        temps = {f"Tp{i:02X}": v["mac_cpu"] - rng.uniform(0, 4) for i in range(self.P_POINTS)}
+        temps |= {f"Te{i:02X}": v["mac_cpu"] - 8 - rng.uniform(0, 3) for i in range(self.E_POINTS)}
+        temps |= {f"Tg{i:02X}": v["mac_gpu"] - rng.uniform(0, 2) for i in range(self.G_POINTS)}
+        temps |= {f"TB{i}T": v["mac_battery"] - 0.2 * i for i in range(3)}
+        fan = v["mac_fan"] if v["mac_fan"] >= 1500 else 0.0
+        loads = [min(100.0, max(0.0, 100 * v["cpu_load"] * (1.0 if i < 6 else 0.5) + self._noise(5)))
+                 for i in range(self.CORES)]
+        r = Readings(chip="Apple M6", model="MacBook Pro", temps=temps, fans=[(fan, 2000.0, 8250.0)],
+                     cpu_loads=loads, gpu_load=100 * v["gpu_load"],
+                     memory=((18 + 6 * v["cpu_load"]) * 2**30, 32 * 2**30),
+                     ssd="APPLE SSD AP1024Z", ssd_temp=v.get("mac_ssd"), disk=(863.9e9, 994.6e9))
+        return build_tree(r, self._mac_sensor)
+
+    def specs(self) -> dict:
+        return {"cpu": {"cores": self.CORES, "threads": self.CORES, "layout": "2 超級核＋4 效能核＋6 節能核"},
+                "gpus": {"Apple M6 GPU": {"cores": 12}},
+                "disks": {"0": {"model": "APPLE SSD AP1024Z", "firmware": "3975.40.", "bus": "Apple Fabric（內建）"}}}
+
+
+PROFILES = {"this-pc": DemoSource, "intel-laptop": IntelLaptopDemo, "mac": MacDemo}

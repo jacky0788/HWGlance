@@ -55,9 +55,11 @@ DPI_AWARENESS_PER_MONITOR_V2 = -4
 MENU_MAIN, MENU_LOCK, MENU_CLOSE, MENU_SETTINGS = 1, 2, 3, 4
 
 LRESULT = ctypes.c_ssize_t
-WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
-WINEVENTPROC = ctypes.WINFUNCTYPE(None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
-                                  wintypes.LONG, wintypes.DWORD, wintypes.DWORD)
+# Mac 沒有 WINFUNCTYPE：換成 CFUNCTYPE 只是讓測試 import 得起來，Mac 不開這個視窗（start() 回傳 False）
+_FUNCTYPE = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+WNDPROC = _FUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+WINEVENTPROC = _FUNCTYPE(None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
+                         wintypes.LONG, wintypes.DWORD, wintypes.DWORD)
 
 
 class WNDCLASSEXW(ctypes.Structure):

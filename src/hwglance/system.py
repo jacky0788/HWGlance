@@ -294,11 +294,20 @@ def webview2_version() -> str | None:
     return None
 
 
+def has_webview() -> bool:
+    """能不能開獨立視窗：Windows 要 WebView2 Runtime；Mac 的 WKWebView 是系統內建的。"""
+    if sys.platform == "darwin":
+        return True
+    return webview2_version() is not None
+
+
 def hints(kind: str, admin: bool, pawnio: str | None) -> list[str]:
     """畫面上方要提醒的事：為什麼有些溫度讀不到、怎麼補（網址在畫面上是可以點的連結）。
-    別台第一次開最常碰到這兩個：沒按「是」給權限、沒裝 PawnIO。"""
+    別台第一次開最常碰到這兩個：沒按「是」給權限、沒裝 PawnIO。Mac 一般權限就讀得到，不用驅動。"""
     if kind == "demo":
         return ["示範資料：數字是模擬的，不是這台電腦的讀數"]
+    if kind == "mac":
+        return []
     out = []
     if not admin:
         out.append("沒有以系統管理員執行：CPU、主機板、硬碟的溫度讀不到。重新開 HWGlance，跳出權限視窗時按「是」")

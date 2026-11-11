@@ -26,7 +26,7 @@ from .api.app import create_app
 from .events.service import EventService
 from .logs import streams_to_log
 from .sensors.blackbox import BlackBox, DemoBlackBox
-from .sensors.service import SensorService
+from .sensors.service import SensorService, features_of
 from .settings import Settings, SettingsStore
 from .ui import SETTINGS_HASH, TITLES
 
@@ -270,6 +270,10 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         from .sensors.demo import PROFILES
         source, event_log = PROFILES[demo_profile](gpu_reset_at=demo_gpu_reset), DemoEventLog()
         box: BlackBox | DemoBlackBox = DemoBlackBox(event_log.downs)     # 示範：算出來的，不寫檔
+    elif sys.platform == "darwin":
+        from .sensors.mac import MacSource
+        source, event_log = MacSource(), None                            # Mac 的當機報告是之後的第 3 段
+        box = recorder = BlackBox(paths.data_dir() / "blackbox")
     else:
         from .events.reader import WindowsEventLog
         from .events.watch import DriverWatch
@@ -279,17 +283,20 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
         # 顯示卡驅動一報錯就先停讀顯示卡，不等到整張卡重設才碰上（sensors/guard.py）
         watch = DriverWatch(lambda what: lhm.guard.trip("gpu", f"驅動回報 {what}"))
         box = recorder = BlackBox(paths.data_dir() / "blackbox")
+    features = set(features_of(source))          # Mac 版沒有的功能（事件記錄、暫存檔…）就不開那些服務
     service = SensorService(source)
-    events = EventService(event_log, service.disk_models)
+    events = EventService(event_log, service.disk_models) if event_log is not None and "events" in features else None
     # 會動到別的程式的功能（SPEC D31 關閉程式、D32 釋放記憶體）：示範資料一定要用假的——示範的 pid 是編的，
     # 拿去關會關到這台不相干的程式；示範模式按「釋放」也不能真的動這台的記憶體
     from .memory import DemoMemory, MemoryTool
     from .processes import ActionLog, DemoProcesses, WindowsProcesses
     from .tempfiles import DemoTemp, TempCleaner
+    processes = memory = temp = None
     if demo:
-        processes, memory = DemoProcesses(source), DemoMemory()
-        temp = DemoTemp(processes)                   # 示範：不碰這台的暫存資料夾
-    else:
+        processes = DemoProcesses(source) if "processes" in features else None
+        memory = DemoMemory() if "memory" in features else None
+        temp = DemoTemp(processes) if "temp" in features and processes is not None else None   # 不碰這台的暫存資料夾
+    elif sys.platform == "win32":
         actions = ActionLog(paths.data_dir() / "actions.log")
         processes, memory = WindowsProcesses(actions), MemoryTool(log=actions)
         temp = TempCleaner(processes, actions)
@@ -305,7 +312,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     port = pick_port(port)
     token = secrets.token_urlsafe(24)
     quit_event = threading.Event()
-    webview = serve_only or system.webview2_version() is not None
+    webview = serve_only or system.has_webview()
     if not webview:
         print(NO_WEBVIEW_HINT[0], flush=True)
     window = None if serve_only else Window(port, token=token, webview=webview)
@@ -321,7 +328,7 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
             tray.notify(*TRAY_HINT)
             store.update(tray_hint_shown=True)
 
-    if not serve_only:
+    if not serve_only and "mini" in features:
         from .fps import DemoFps, PresentMonFps
         from .mini import MiniMode
         fps = DemoFps() if demo else PresentMonFps(paths.presentmon_dir(), admin=system.is_admin())
@@ -331,6 +338,8 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
                         notify=lambda message, title: tray.notify(message, title) if tray is not None else None)
         mini.start()
         views.mini = mini
+    # Mac 版還沒有選單列圖示（第 2 段）：沒有系統匣，關掉視窗就整個結束
+    if not serve_only and "tray" in features:
         tray = start_tray(views.open, quit_event.set, mini)
     if tray is not None and not webview:
         tray.notify(*NO_WEBVIEW_HINT)

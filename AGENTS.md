@@ -14,12 +14,19 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 （Win32 分層視窗＋Pillow 畫字，像 RivaTuner：背景可以半透明、字照樣清楚），跟主畫面同時只開一個；遊戲 FPS 用 PresentMon。
 本體要以系統管理員執行才讀得到 CPU／主機板／硬碟（`run.bat` 會自己跳 UAC）；PawnIO 由使用者自己安裝。
 
+**Mac 版（2026-11-11 起，`feat/macos` 分支，分段做，SPEC 的「Mac 版」與 M1…）**：Apple 晶片一般權限就讀得到——SMC 的溫度與風扇、
+HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctypes），`sensors/mac.py` 整理成跟 LHM 一樣的硬體樹，後面全部照用。
+第 1 段（讀數＋即時監控頁）做完；選單列圖示、App 包裝、Mac 外觀是第 2 段，當機報告是第 3 段。Mac 版沒有的功能靠快照的
+`source.features`（`service.ALL_FEATURES`）藏起來：Mac 現在是空的，事件記錄、暫存檔、迷你模式、系統匣、記憶體組成、關閉程式都不開。
+
 ## 程式在哪裡
 
 | 位置 | 放什麼 |
 |---|---|
 | `src/hwglance/sensors/lhm.py` | **唯一碰 .NET 的地方**：載入 DLL（CLR 啟動前設 `CSE_POLICY`，存取違規才接得到）、開關各類硬體、一層層更新（LHM 的 `Motherboard.Update()` 是空的，Super I/O 要自己更新）、把硬體樹轉成 `RawHardware`；某一類讀失敗交給 `guard.py` 停讀、到時候 `Is*Enabled` 關掉重開；`specs()` 讀規格（SMBIOS＋WMI 的硬碟與顯示卡驅動） |
 | `src/hwglance/sensors/demo.py` | 示範資料：照這台電腦 2026-10-31 的 probe 模擬，名稱、Identifier、順序跟 LHM 一樣；`IntelLaptopDemo`（`--demo-profile intel-laptop`）是另一種電腦：Intel 12 代筆電（效能核／節能核、內顯＋筆電獨顯、電池、主機板沒有感測器），名稱照 LHM 原始碼 |
+| `src/hwglance/sensors/macio.py` | **Mac 唯一碰系統 API 的地方**（ctypes）：`Smc`（只送讀取的指令）、`HidTemps`（SSD 的 NAND 溫度）、`cpu_ticks`、`Accelerator`（GPU 使用率、核心數）、`memory_pages`、`sysctl_*`、`core_levels`、`profile`（system_profiler，不讀序號）、`volume_space`；函式庫第一次用到才載入，Windows 也 import 得起來 |
+| `src/hwglance/sensors/mac.py` | Mac 的來源 `MacSource`（kind `mac`，`features=()`）：開啟時列 SMC 的 Tp／Te／Tg／TB 鍵、讀型號；每輪讀溫度、風扇、使用率、記憶體，SSD 每 10 輪；`build_tree`（純函式）把 `Readings` 變成 CPU（`/applesoc/0`）、GPU（`/applegpu/0`，type `GpuApple`）、機身（`/applesmc/0`：電池、風扇）、記憶體、SSD；`tests/test_mac.py` 用假讀數、假 io 測。`demo.MacDemo`（`--demo-profile mac`）照那台 M6 模擬 |
 | `src/hwglance/sensors/model.py` | `RawHardware`／`RawSensor`（LHM 與示範資料共用的形狀） |
 | `src/hwglance/sensors/normalize.py` | 整理：分類、總覽磚塊、主溫度、負載／時脈／功耗、風扇。純函式，`tests/test_normalize.py` 用假樹測 |
 | `src/hwglance/sensors/details.py` | 點硬體跳出的詳細資訊：規格＋所有讀數分段（規格、溫度、負載…），中文名稱、單位、一句說明；每段帶 `measure`（量的是什麼，前端配圖示與顏色），「顯存被誰佔用」是 `ranking`；挑剩的放「其他讀數」（每行自己帶 `measure`）。純函式，`tests/test_details.py` 用示範資料測 |
@@ -55,7 +62,8 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 
 ## 硬性規則
 
-1. **測試絕不碰真的硬體、不載入 LHM**：用 `tests/conftest.py` 的假樹或 `DemoSource`。
+1. **測試絕不碰真的硬體、不載入 LHM**：用 `tests/conftest.py` 的假樹或 `DemoSource`。Mac 也一樣：測試不呼叫 `macio`，
+   用 `mac.Readings`／假的 io（`tests/test_mac.py`）或 `MacDemo`。
 2. **只有 `sensors/lhm.py` 可以 import clr／pythonnet**（`tests/test_consistency.py` 會擋）。
 3. **API 幾乎只讀**。會動作的只有：存自己的設定（`PUT /api/settings`）、開自己的視窗（`POST /api/ui/open`）、
    結束自己（`POST /api/app/quit`）、視窗程序拿指令（`GET /api/ui/commands`），以及使用者 2026-11-03 同意的
@@ -95,12 +103,25 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 | 看這台讀得到哪些感測器 | 使用者雙擊 `probe.bat`（跳 UAC）→ 結果在 `data/probe/probe-日期-時間.txt`，agent 讀這個檔 |
 | 改介面時預覽 | `F:\Desktop\claude_project\.claude\launch.json` 的 `hwglance-demo`（埠 8797，示範資料，設定存在 `data/demo`；它是 `--serve`，沒有迷你模式） |
 | 看顯示卡重設時的畫面 | launch.json 的 `hwglance-demo-gpu-reset`（埠 8798，`--demo-gpu-reset 15`：開啟 15 秒後模擬一次，約 1 分鐘後重新連上） |
-| 看別種電腦的畫面 | launch.json 的 `hwglance-demo-intel`（埠 8799，`--demo-profile intel-laptop`） |
+| 看別種電腦的畫面 | launch.json 的 `hwglance-demo-intel`（埠 8799，`--demo-profile intel-laptop`）；Mac 的畫面 `--demo-profile mac` |
+| Mac 上開（第 1 段，還沒有 App） | 第一次：`python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt`、`cd frontend && npm ci && npm run build`（node 在 `/opt/homebrew/opt/node@22/bin`）；之後 `.venv/bin/python -m hwglance`（視窗）或 `--serve`（瀏覽器）。一般權限就好，不用 sudo |
+| Mac 上測 | `.venv/bin/python -m pytest`（Windows 才有的 8 項會跳過）；agent 自己開的要加 `--data <暫存資料夾>`，用 `POST /api/app/quit` 結束 |
 | 給另一台電腦 | `.venv\Scripts\python.exe scripts\build_portable.py` → `build\` 裡的 zip；改了程式或介面要重新產生（介面先 `npm run build`） |
 | 不用系統管理員看桌面視窗 | `.venv\Scripts\pythonw.exe -m hwglance --demo --data data/demo-desktop`（`--data` 讓設定不跟真的混在一起；用完刪掉那個資料夾） |
 | 叫出迷你模式／只開系統匣 | `python -m hwglance --activate --mode mini`；`python -m hwglance --hidden`；快速鍵 Ctrl+Alt+M 開關、Ctrl+Alt+L 鎖定／解除 |
 | 使用者的迷你模式鎖住了、找不到系統匣 | 本機 API：GET `/api/settings`，把 `mini.locked` 改成 false 用 PUT 存回去（token 在 `data/instance.json`），其他欄位照原樣帶 |
 | 看迷你模式（不用系統管理員） | `.venv\Scripts\python.exe -m hwglance --demo --mode mini --port 8811 --data <暫存資料夾>`（示範 FPS，不跑 PresentMon）；截圖要 `ImageGrab.grab(..., include_layered_windows=True)`，用 API 結束 |
+
+## Mac 的環境事實（2026-11-11，MacBook Pro 14 吋 M6、macOS 27.2，一般權限）
+
+- 12 核心＝2 超級核（Super）＋4 效能核＋6 節能核（`hw.nperflevels`＝3）、GPU 12 核、32 GB、1 TB SSD（APPLE SSD AP1024Z）。
+- SMC 3209 個鍵、159 個溫度（Apple 晶片是 `flt ` 小端序）；Tp 21 個、Te 9 個、Tg 18 個、TB0T～TB2T；FNum＝1，閒置時 F0Ac＝0（停轉），F0Mn 2000、F0Mx 8250。
+  列鍵 26 ms、讀 51 個鍵 7 ms，整輪約 9 ms。Apple 沒公開鍵的意思，每代晶片不一樣（M3 用 Tf），別台 Mac 沒驗過。
+- HID 溫度感測器 47 個（PMU tdie…、NAND CH0 temp、gas gauge battery），名稱沒分 CPU／GPU，所以只拿 NAND 當 SSD 溫度。
+- 一般權限讀不到時脈與功耗：要 IOReport（私有框架）或 `powermetrics`（要 sudo），還沒做。
+- pywebview 在 Mac 走 Cocoa＋WKWebView；視窗程序在 Dock 顯示成「Python」（第 2 段做 App 包裝）。沒有系統匣時關掉視窗就整個結束。
+- Mac 的 Python 用 Homebrew 的 python@3.12（`/opt/homebrew/bin/python3.12`），不是 Windows 的 3.14。
+- agent 截不到別的程式的視窗（沒有螢幕錄製權限）：看畫面用 `--serve` 開在內建瀏覽器；確認視窗有出來用 `CGWindowListCopyWindowInfo`（看得到位置與大小）。
 
 ## 環境事實（2026-10-29～31 驗證過）
 

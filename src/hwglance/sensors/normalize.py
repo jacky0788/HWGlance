@@ -21,7 +21,7 @@ from .thresholds import DEFAULTS, Band, cpu_band, level
 
 KIND_BY_TYPE = {
     "Cpu": "cpu",
-    "GpuNvidia": "gpu", "GpuAmd": "gpu", "GpuIntel": "gpu",
+    "GpuNvidia": "gpu", "GpuAmd": "gpu", "GpuIntel": "gpu", "GpuApple": "gpu",
     "Motherboard": "board", "SuperIO": "board", "EmbeddedController": "board",
     "Cooler": "cooler",
     "Memory": "memory",
@@ -43,10 +43,15 @@ CPU_HEADLINE = ("Core (Tctl/Tdie)", "Core (Tdie)", "Core (Tctl)", "CPU Package",
 PER_CORE = re.compile(r"(?:CPU |[PE]-)?Core #\d+")
 # Intel 每個核心「離 TjMax（降頻溫度）還差幾度」：LHM 把它當溫度給，但它不是溫度
 DISTANCE = " Distance to TjMax"
+# Mac（sensors/mac.py）：硬體的 id 都是 /apple 開頭；SMC 的每一個溫度點只放詳細資訊，卡片放最高與平均
+APPLE = "/apple"
+APPLE_POINT = re.compile(r"(?:P-Cluster|E-Cluster|GPU Cluster) #\d+")
+# Apple 沒公開降頻溫度；Apple 晶片滿載常到 95～105°C 才降頻，暫定 105（門檻 90／100，2026-11-11 定，之後照真機調）
+APPLE_TJMAX = 105.0
 GPU_TILES = (("GPU Core", "GPU 核心"), ("GPU Hot Spot", "GPU 熱點"))
-# 主機板上哪些溫度放進總覽：(LHM 名稱, 磚塊標題)；同一個標題只放一次
+# 主機板上哪些溫度放進總覽：(LHM 名稱, 磚塊標題)；同一個標題只放一次。Battery 是 Mac 機身的電池溫度
 BOARD_TILES = (("Motherboard", "主機板"), ("System", "主機板"), ("Chipset", "晶片組"), ("PCH", "晶片組"),
-               ("VRM", "供電"), ("VRM MOS", "供電"))
+               ("VRM", "供電"), ("VRM MOS", "供電"), ("Battery", "電池"))
 STORAGE_HEADLINE = ("Composite Temperature", "Temperature")
 
 
@@ -161,9 +166,10 @@ class _Device:
         self.data["stats"].append(item)
 
     def fans_of(self, hw: RawHardware) -> None:
-        """有轉過的風扇才列出來；從沒轉過的（沒接）只計數。"""
+        """有轉過的風扇才列出來；從沒轉過的（沒接）只計數。Mac 的風扇一定有接（SMC 說有幾個），閒置時會停在 0。"""
+        always = hw.id.startswith(APPLE)
         for s in _of(hw, "Fan"):
-            if (s.value or 0) <= 0 and (s.max or 0) <= 0:
+            if not always and (s.value or 0) <= 0 and (s.max or 0) <= 0:
                 self.data["unplugged"] += 1
                 continue
             control = _find(hw, "Control", s.name)
@@ -187,7 +193,9 @@ class _Device:
 
 def cpu_tjmax(hw: RawHardware) -> float | None:
     """Intel 的 TjMax（降頻溫度）＝核心溫度＋「離 TjMax 還差幾度」（LHM 從 MSR 讀了 TjMax 但不直接給）。
-    每個核心應該一樣，取最多核心算出來的那個；AMD 沒有這個感測器就 None。"""
+    每個核心應該一樣，取最多核心算出來的那個；AMD 沒有這個感測器就 None。Apple 晶片用暫定的 APPLE_TJMAX。"""
+    if hw.id.startswith(APPLE):
+        return APPLE_TJMAX
     temps = {s.name: s.value for s in _of(hw, "Temperature")}
     found = [round(temps[core] + s.value) for s in _of(hw, "Temperature")
              if s.name.endswith(DISTANCE) and s.value is not None
@@ -204,8 +212,9 @@ def _cpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     sensors = [s for s in _of(hw, "Temperature") if not s.name.endswith(DISTANCE)]
     if any(s.name in CPU_HEADLINE and valid_temp(s) for s in sensors):
         # AMD 的 CCD 溫度是瞬間值，真機每秒在 48～78°C 之間跳（2026-10-31）；有平滑過的 Tctl/Tdie 就不列。
-        # Intel 每個核心一個溫度（24 核就 24 個），有封裝／核心最高就不列（詳細資訊裡還看得到）
-        sensors = [s for s in sensors if not s.name.startswith("CCD") and not PER_CORE.fullmatch(s.name)]
+        # Intel 每個核心一個溫度（24 核就 24 個），有封裝／核心最高就不列（詳細資訊裡還看得到）；Mac 的 SMC 溫度點也是
+        sensors = [s for s in sensors if not s.name.startswith("CCD") and not PER_CORE.fullmatch(s.name)
+                   and not APPLE_POINT.fullmatch(s.name)]
     temps = {s.name: t for s in sensors if (t := dev.temp(s, "cpu"))}
     head = next((temps[n] for n in CPU_HEADLINE if n in temps), None)
     if head is not None:
@@ -243,6 +252,8 @@ def _gpu(hw: RawHardware, bands: dict[str, Band]) -> _Device:
     dev = _Device(hw, "gpu", bands, sub=short_gpu(hw.name))
     temps: dict[str, dict] = {}
     for s in _of(hw, "Temperature"):
+        if APPLE_POINT.fullmatch(s.name):            # Mac 的 GPU 有 18 個溫度點：卡片放最高與平均，每個點看詳細資訊
+            continue
         if t := dev.temp(s, _gpu_role(s.name)):
             temps.setdefault(s.name, t)
     for name, title in GPU_TILES:
@@ -276,6 +287,8 @@ def _board_role(name: str) -> str:
         return "vrm"
     if name in ("CPU", "CPU Socket") or name.startswith("PECI"):
         return "cpu"
+    if name == "Battery":                             # Mac 機身的電池（sensors/mac.py）
+        return "battery"
     return "board"
 
 

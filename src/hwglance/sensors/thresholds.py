@@ -6,6 +6,8 @@
 - 硬碟：NVMe／SATA SSD 70°C 左右開始降速；機械硬碟超過 45°C 就不理想。
 - 2026-10-31 依真機調高（使用者同意）：晶片組 70/80 → 80/90（X570 晶片組平常就 70～80°C，真機閒置 78°C）；
   NVMe 55/70 → 60/70（真機 KIOXIA 閒置 57°C，它自己回報的警告溫度是 71°C）。
+- 2026-11-11 Mac：電池 40／45（Apple 建議的使用環境是 35°C 以下，電池長時間 45°C 以上會加速老化）；
+  Apple 晶片的 CPU 照暫定的降頻溫度 105°C 算（normalize.APPLE_TJMAX → 90／100）。
 """
 from __future__ import annotations
 
@@ -32,6 +34,7 @@ DEFAULTS: dict[str, Band] = {
     "dimm": Band(60, 75),
     "liquid": Band(40, 45),
     "psu": Band(60, 75),
+    "battery": Band(40, 45),
     "other": Band(70, 85),
 }
 
@@ -51,6 +54,7 @@ LABELS: dict[str, str] = {
     "dimm": "記憶體（DIMM）",
     "liquid": "水溫",
     "psu": "電源",
+    "battery": "電池",
     "other": "其他",
 }
 
