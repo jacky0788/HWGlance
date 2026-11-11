@@ -438,3 +438,15 @@ def volume_space(path: str = "/System/Volumes/Data") -> tuple[int, int]:
     """(可用位元組, 總位元組)：使用者資料所在的 APFS 宗卷（容量是整個容器的，跟「關於這台 Mac」一樣）。"""
     st = os.statvfs(path)
     return st.f_bavail * st.f_frsize, st.f_blocks * st.f_frsize
+
+
+class _TimeVal(ctypes.Structure):
+    _fields_ = [("sec", ctypes.c_int64), ("usec", ctypes.c_int32)]
+
+
+def boot_time() -> float | None:
+    """這次開機的時間（sysctl kern.boottime，epoch 秒）；events/mac.py 用來記每次開機的上次關機原因。"""
+    tv, size = _TimeVal(), ctypes.c_size_t(ctypes.sizeof(_TimeVal))
+    if _libc().sysctlbyname(b"kern.boottime", ctypes.byref(tv), ctypes.byref(size), None, 0):
+        return None
+    return tv.sec + tv.usec / 1e6 if tv.sec > 0 else None

@@ -4,7 +4,7 @@ import { AppWindow, Cpu, Gpu, HardDrive, MonitorX, RotateCcw } from "lucide-reac
 import type { LucideIcon } from "lucide-react";
 import { number, when } from "../../lib/format";
 import type { EventCounts, EventReport, Incident } from "../../types";
-import { LABELS, matches } from "./meta";
+import { LABELS, isMac, matches } from "./meta";
 import type { Filter } from "./meta";
 
 interface CardDef {
@@ -35,6 +35,16 @@ const CARDS: CardDef[] = [
     match: (i) => i.involves.includes("hardware") },
   { label: "程式當掉", unit: "次", icon: AppWindow, tone: "kind-other text-(--kind)", severe: "never",
     title: "程式當掉或沒有回應的次數", count: (c) => c.app, match: (i) => i.involves.includes("app") },
+];
+
+// Mac 只記得到核心錯誤與不正常的關機（events/mac.py）：顯示卡、硬碟、程式當掉這幾格放了只會一直寫「沒有」
+const MAC_CARDS: CardDef[] = [
+  { label: "核心錯誤", unit: "次", icon: MonitorX, tone: "text-fg-subtle", severe: "always",
+    title: "macOS 的核心遇到沒辦法繼續的錯誤（kernel panic），留下報告後重新開機", count: (c) => c.bluescreen,
+    match: (i) => i.badge === "核心錯誤" },
+  { label: "意外重開", unit: "次", icon: RotateCcw, tone: "text-fg-subtle", severe: "always",
+    title: "沒有核心錯誤報告的不正常關機：系統卡住被看門狗重開、按住電源鍵、斷電、過熱", count: (c) => c.reset,
+    match: (i) => i.category === "crash" && i.badge !== "核心錯誤" },
 ];
 
 function StatCard({ def, report }: { def: CardDef; report: EventReport }) {
@@ -69,21 +79,23 @@ function StatCard({ def, report }: { def: CardDef; report: EventReport }) {
 export function EventSummary({ report }: { report: EventReport }) {
   return (
     <ul aria-label="摘要" className="tiles m-0 p-0 list-none">
-      {CARDS.map((def) => <StatCard key={def.label} def={def} report={report} />)}
+      {(isMac(report) ? MAC_CARDS : CARDS).map((def) => <StatCard key={def.label} def={def} report={report} />)}
     </ul>
   );
 }
 
 const FILTERS: Filter[] = ["all", "crash", "gpu", "storage", "hardware", "app", "system"];
+const MAC_FILTERS: Filter[] = ["all", "crash"];
 
-export function Filters({ incidents, value, onChange }: {
+export function Filters({ incidents, value, onChange, mac = false }: {
   incidents: Incident[];
   value: Filter;
   onChange: (f: Filter) => void;
+  mac?: boolean; // Mac 的記錄只有當機與重開（events/mac.py）
 }) {
   return (
     <div role="group" aria-label="只看哪一類" className="flex flex-wrap gap-1.5">
-      {FILTERS.map((f) => {
+      {(mac ? MAC_FILTERS : FILTERS).map((f) => {
         const n = incidents.filter((i) => matches(i, f)).length;
         if (f === "system" && n === 0 && value !== f) return null; // 系統提醒很少見，沒有就不列
         const on = f === value;

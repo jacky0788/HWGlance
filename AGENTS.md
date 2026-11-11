@@ -16,9 +16,9 @@ LibreHardwareMonitorLib（LHM，.NET，MPL-2.0）讀硬體：透過 PawnIO 驅�
 
 **Mac 版（2026-11-11 起，`feat/macos` 分支，分段做，SPEC 的「Mac 版」與 M1…）**：Apple 晶片一般權限就讀得到——SMC 的溫度與風扇、
 HID 的 SSD 溫度、CPU／GPU 使用率、記憶體（`sensors/macio.py`，ctypes），`sensors/mac.py` 整理成跟 LHM 一樣的硬體樹，後面全部照用。
-第 1 段（讀數＋即時監控頁）、第 2 段（選單列 `menubar.py`、`HWGlance.app`、視窗的 Mac 外觀）做完，當機報告是第 3 段。
+第 1 段（讀數＋即時監控頁）、第 2 段（選單列 `menubar.py`、`HWGlance.app`、視窗的 Mac 外觀）、第 3 段（事件記錄：核心錯誤報告與上次關機原因，`events/mac.py`）做完。
 Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執行緒跑 AppKit 的事件迴圈；視窗程序照舊另開。Mac 版沒有的功能靠快照的
-`source.features`（`service.ALL_FEATURES`）藏起來：Mac 只有 `tray`（＝選單列），事件記錄、暫存檔、迷你模式、記憶體組成、關閉程式都不開；
+`source.features`（`service.ALL_FEATURES`）藏起來：Mac 有 `tray`（＝選單列）、`events`，暫存檔、迷你模式、記憶體組成、關閉程式都不開；
 設定頁的門檻只列來源的 `roles`（`mac.MAC_ROLES`）。**配色、版面照 Windows 版**（使用者定過的，SPEC D22、D28），Mac 只改視窗外框與字型。
 
 ## 程式在哪裡
@@ -50,6 +50,7 @@ Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執�
 | `src/hwglance/instance.py` | 單一執行個體：`data/instance.json`＋`python -m hwglance --activate [--mode mini]` |
 | `src/hwglance/probe.py` | 探測工具（`probe.bat`）：列出讀得到的所有感測器 |
 | `src/hwglance/system.py` | 是不是系統管理員、PawnIO 版本、WebView2 版本（沒有就用瀏覽器開）、CPU 快取大小（Windows API）、佔用顯存的程式（PDH `\GPU Process Memory(*)\Dedicated Usage`＋程式名稱）、畫面上的提醒文字 |
+| `src/hwglance/events/mac.py` | Mac 的事件記錄（SPEC M9～M11）：`MacEventLog` 讀 `/Library/Logs/DiagnosticReports`（含 Retired）的核心錯誤報告（`parse_panic`、`describe_panic`）、`last` 的開關機時間（`parse_last`，從 wtmp begins 的年份往回推）、開啟時把這次開機的 `kern.shutdownreason` 記進 `data/macboots.jsonl`（同一次開機只記一次；`classify_reason` 只認看門狗、電源鍵、斷電、過熱、核心錯誤，其他照原文寫在開機標記）；`build_entries` 整理成 `catalog.Entry`（Mac 的標題、說明、建議放在 `info["mac"]`，`incidents._describe` 直接用）；`EventService` 看到來源有 `entries()` 就不走 Windows 的頻道。`MacDemoEventLog`（`--demo-profile mac`）；`tests/test_mac_events.py` 全是編的資料 |
 | `src/hwglance/events/` | 事件記錄（SPEC D24）：`reader.py` 讀 Windows 事件記錄（wevtapi，ctypes，唯讀）、`catalog.py` 要讀哪些事件（`WATCHED`）與每種的中文說明、藍屏代碼、建議、`incidents.py` 歸成一件件事（純函式）、`demo.py` 照這台 6～10 月的真實記錄、`service.py` 60 秒快取、`watch.py` 訂閱顯示卡驅動的新錯誤（一報錯就先停讀顯示卡，`core.py` 接到 `guard`）；`tests/test_events.py` |
 | `scripts/fetch_lhm.py` | 從官方 release 取 LHM 0.9.6（比對 SHA-256），解到 `vendor/lhm/`（不進 git） |
 | `scripts/fetch_presentmon.py` | 從官方 release 取 PresentMon 2.6.0 命令列版（比對 GitHub 公布的 SHA-256）＋LICENSE、THIRD_PARTY，放到 `vendor/presentmon/`（不進 git；`setup.bat` 第一次會跑，失敗只是沒有 FPS） |
@@ -129,6 +130,10 @@ Mac 的本體是「輔助程式」（只在選單列、不在 Dock），主執�
   從終端機開的視窗程序 Dock 上還是 Python 的圖示（`mac_identity` 只改得了選單列的名稱與圖示）。
 - Python 一啟動就把 `__PYVENV_LAUNCHER__` 從環境變數拿掉：本體開視窗程序時要再帶一次（`core.Window._spawn_process`），不然視窗程序找不到 .venv。
 - macOS 27 的標題列 32 點、紅黃綠按鈕右邊到 68 點左右（比以前大），所以用量的、不寫死。
+- 事件記錄的來源（2026-11-11 查過）：`/Library/Logs/DiagnosticReports` 屬於 `_analyticsusers` 群組，這台的使用者讀得到；這台沒有核心錯誤報告。
+  `kern.shutdownreason` 只有上一次（正常重開是 `rst_in,reset_in_rise rst_in,reset_in_fall ap_restart`），`kern.bootreason` 是 `auto_wakeup`；
+  `pmset -g log` 沒有關機原因；統一記錄（`/usr/bin/log`，zsh 裡 `log` 是內建指令）查 10 天要 85 秒、也查不到「Previous shutdown cause」，所以不用。
+  診斷報告的檔名帶電腦名稱，測試、示範資料不要用真的檔名。
 - macOS 27 的選單列項目不是 App 自己的視窗（由 MenuBarAgent 代管），`CGWindowListCopyWindowInfo` 看不到；要驗證就在自己的程序裡建一個、把按鈕畫成圖（暫存區的檢查腳本做過）。
 - Mac 的 Python 用 Homebrew 的 python@3.12（`/opt/homebrew/bin/python3.12`），不是 Windows 的 3.14。
 - agent 截不到別的程式的視窗（沒有螢幕錄製權限）：看畫面用 `--serve` 開在內建瀏覽器；確認視窗有出來用 `CGWindowListCopyWindowInfo`（看得到位置與大小）。

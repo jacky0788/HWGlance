@@ -287,12 +287,17 @@ def run(port: int = DEFAULT_PORT, demo: bool = False, serve_only: bool = False,
     recorder: BlackBox | None = None
     if demo:
         from .events.demo import DemoEventLog
+        from .events.mac import MacDemoEventLog
         from .sensors.demo import PROFILES
-        source, event_log = PROFILES[demo_profile](gpu_reset_at=demo_gpu_reset), DemoEventLog()
-        box: BlackBox | DemoBlackBox = DemoBlackBox(event_log.downs)     # 示範：算出來的，不寫檔
+        source = PROFILES[demo_profile](gpu_reset_at=demo_gpu_reset)
+        event_log = MacDemoEventLog() if demo_profile == "mac" else DemoEventLog()
+        # 示範：算出來的，不寫檔；跟畫面同一種示範電腦（Mac 的示範黑盒子是 Mac 的讀數）
+        box: BlackBox | DemoBlackBox = DemoBlackBox(event_log.downs, source=type(source))
     elif sys.platform == "darwin":
+        from .events.mac import MacEventLog
         from .sensors.mac import MacSource
-        source, event_log = MacSource(), None                            # Mac 的當機報告是之後的第 3 段
+        # 核心錯誤報告、每次開機記下的上次關機原因（events/mac.py）；開啟時就把這次開機的原因記進 data/macboots.jsonl
+        source, event_log = MacSource(), MacEventLog(paths.data_dir())
         box = recorder = BlackBox(paths.data_dir() / "blackbox")
     else:
         from .events.reader import WindowsEventLog

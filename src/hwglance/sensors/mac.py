@@ -171,8 +171,8 @@ class MacSource:
     """真的 Mac。io 給測試換成假的（tests/test_mac.py）；預設是 macio。"""
 
     kind = "mac"
-    # tray＝選單列（第 2 段，menubar.py）；事件記錄、暫存檔、迷你模式 Mac 版還沒有，畫面上就不出現那些分頁與按鈕
-    features: tuple[str, ...] = ("tray",)
+    # tray＝選單列（第 2 段，menubar.py）、events＝事件記錄（第 3 段，events/mac.py）；暫存檔、迷你模式 Mac 版沒有
+    features: tuple[str, ...] = ("tray", "events")
     roles = MAC_ROLES
 
     def __init__(self, io=None) -> None:

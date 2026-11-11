@@ -2,7 +2,7 @@
 // 嚴重程度（標籤、數字、每一行前面的點）一律用等級色。
 import { AppWindow, Cpu, Flame, Gpu, HardDrive, Info, MonitorX, Power, RotateCcw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { EventCategory, EventLevel, Incident } from "../../types";
+import type { EventCategory, EventLevel, EventReport, Incident } from "../../types";
 
 export type Filter = "all" | EventCategory;
 
@@ -18,7 +18,8 @@ export const LABELS: Record<EventCategory, string> = {
 const ICONS: Record<EventCategory, LucideIcon> = {
   crash: RotateCcw, gpu: Gpu, storage: HardDrive, hardware: Cpu, system: Info, app: AppWindow,
 };
-const CRASH_ICONS: Record<string, LucideIcon> = { 藍屏: MonitorX, 強制關機: Power, 過熱: Flame };
+// Mac（events/mac.py）的標籤：核心錯誤＝藍屏、斷電
+const CRASH_ICONS: Record<string, LucideIcon> = { 藍屏: MonitorX, 核心錯誤: MonitorX, 強制關機: Power, 斷電: Power, 過熱: Flame };
 const KINDS: Partial<Record<EventCategory, string>> = { gpu: "kind-gpu", storage: "kind-storage", hardware: "kind-cpu" };
 
 export function iconOf(i: Incident): { Icon: LucideIcon; tone: string } {
@@ -29,6 +30,11 @@ export function iconOf(i: Incident): { Icon: LucideIcon; tone: string } {
 // 事件等級 → level-* class：資訊（開機、傾印檔已存）用灰色
 export function levelClass(level: EventLevel): string {
   return level === "info" ? "level-none" : `level-${level}`;
+}
+
+// 這份記錄是不是 Mac 的：事件頁換成 Mac 的說法、只放 Mac 有的摘要與篩選
+export function isMac(report: EventReport): boolean {
+  return report.source === "mac" || report.source === "mac-demo";
 }
 
 // 篩選看「牽涉到」：藍屏前有顯示卡錯誤的那次，選「顯示卡」也看得到（跟摘要的數字算法一樣）

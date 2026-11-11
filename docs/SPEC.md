@@ -436,10 +436,29 @@ CPU 與主機板的溫度要靠核心驅動才讀得到（Windows 不讓一般�
   選單列與視窗用暫存區的檢查腳本在自己的程序裡驗：選單列項目可見、「93°」橘色、選單 7 行；視窗截圖紅黃綠按鈕、logo、「設定」對齊，
   假滑鼠事件：頂端列空白處連按兩下會縮放、「設定」上連按兩下不會。**沒有實際用滑鼠點選單列**（agent 沒有輔助使用權限）。
 
+### Mac 版第 3 段：事件記錄——核心錯誤報告與上次關機原因（2026-11-11，M9～M11）
+
+使用者說「開始做第 3 段」。
+
+| # | 決策 | 原因 |
+|---|---|---|
+| M9 | 來源：①`/Library/Logs/DiagnosticReports`（含 Retired）的 `*.panic`、`panic-*.ips`（bug_type 210），只拿 panicString 第一行、時間、系統版本；②`kern.shutdownreason`：系統只留上一次，HWGlance 每次啟動記一筆到 `data/macboots.jsonl`（同一次開機只記一次），之後才有歷史；③`last`（wtmp）的開機、正常關機時間當時間軸標記。**不用統一記錄（log show）** | log show 查 10 天要 85 秒，而且這台（Apple 晶片、macOS 27）查不到「Previous shutdown cause」；`pmset -g log` 也沒有關機原因 |
+| M10 | 關機原因的代號 Apple 沒公開：只認看門狗（wdog）、電源鍵（btn、long_press）、斷電（uvlo、brownout、power_loss…）、過熱（therm、temp）、核心錯誤（panic）；其他（例如正常重開的 `ap_restart`）不當成出事，原文寫在開機標記上（「開機（上次：正常重新開機）」） | 寧可漏報不要誤報：認錯一個正常的代號，事件頁就會一直多一件假的當機 |
+| M11 | 整理成跟 Windows 一樣的 Entry，歸類、摘要、黑盒子、事件頁照用；Mac 的標題、說明、建議在讀的時候就算好（`info["mac"]`）。事件頁看 `source` 是 `mac`／`mac-demo` 換成 Mac 的說法：摘要只有「核心錯誤」「意外重開」兩格、篩選只有全部與當機與重開 | 顯示卡、硬碟、程式當掉 Mac 這段沒有讀，放了只會一直寫「沒有」 |
+
+- 核心錯誤的標題照第一行判斷：看門狗（「系統卡住，WindowServer 太久沒回應」）、GPU（AGX）、睡眠喚醒、儲存（NVMe、APFS）、記憶體、溫度，其他寫「核心遇到無法處理的錯誤」；
+  核心錯誤之後 12 小時內的開機算它造成的重開，跟開機時記下的原因合成一件（「核心錯誤 → 70 秒後重新開機」）。
+- 順手修：①示範黑盒子一律用 Windows 的示範電腦，Mac 示範看到 GPU 282 W、KIOXIA → `DemoBlackBox(source=)` 跟畫面同一種；
+  ②黑盒子的「偏高」用設定的 CPU 門檻，沒有照降頻溫度算（Mac 89°C 說偏高、主畫面說正常）→ `/api/blackbox` 跟 normalize 一樣照 TjMax（Intel 也受惠）。
+- 驗證：pytest 184 項（新增 `tests/test_mac_events.py` 7 項：兩種報告格式、標題、關機原因、`last` 跨年、核心錯誤＋重開合成一件、每次開機只記一次與寫一半的行、示範資料）、
+  `npm run build` 通過；示範資料在內建瀏覽器看過事件頁、點開那件事（經過、前一次開機、黑盒子、說明、建議）；這台真的資料：讀一次 8 ms、沒有事件（這台沒當過）、
+  `macboots.jsonl` 第二次啟動沒有重記。**沒有真的核心錯誤報告可以驗**（這台沒有），格式照 Apple 的報告寫、用編的資料測。
+
 ## 還沒做／待確認
 
 - Mac 第 2 段的選單列：使用者自己點一次（字、顏色、選單、「開啟主畫面」「結束」）；第一次關視窗的通知沒看過。
-- Mac 第 3 段：當機（panic）報告、上次關機原因（事件記錄頁）。
+- Mac 事件記錄：等真的有一次核心錯誤時，看報告的格式跟 `parse_panic` 對不對得上；`kern.shutdownreason` 的其他代號遇到再補（M10）。
+- Mac 之後可以加：App 當掉（`~/Library/Logs/DiagnosticReports` 的 .ips，bug_type 309）。
 - Mac 之後：CPU／GPU 的時脈與功耗（IOReport）；GPU 門檻照真機調；其他 Apple 晶片（M3 的 SMC 用 Tf）沒有真機驗。
 - 合併：家用機 11-07 的 D34～D36 推上去後，跟 `feat/macos` 合併（`normalize.py`、`details.py`、`format.ts`、`tests/test_blackbox.py` 兩邊都有改）。
 

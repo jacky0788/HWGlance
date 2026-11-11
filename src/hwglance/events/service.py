@@ -48,6 +48,14 @@ class EventService:
             return payload
 
     def _build(self, days: int | None, now: float) -> dict:
+        entries_of = getattr(self.log, "entries", None)
+        if callable(entries_of):                     # Mac（events/mac.py）：直接給整理好的 Entry，沒有 Windows 的頻道與事件代號
+            try:
+                entries, errors = entries_of(days), list(getattr(self.log, "errors", []))
+            except OSError as e:
+                entries, errors = [], [f"讀不到記錄：{e.strerror or e}"]
+            return {"source": self.log.kind,
+                    **report(entries, days=days, oldest=self.log.oldest("System"), now=now, errors=errors)}
         disks = dict(self.disks())
         entries, errors = [], []
         for channel, providers in WATCHED.items():

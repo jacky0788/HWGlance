@@ -221,6 +221,11 @@ def _describe(g: Group, entries: list[Entry]) -> tuple[str, str, str, list[str],
     explain: list[str] = []
     advice: list[str] = []
     if g.category == CRASH:
+        # Mac（events/mac.py）：標題、說明、建議在讀的時候就整理好了；有核心錯誤報告的話以它為準
+        mac = next((e.info["mac"] for e in entries if e.role == "panic"), None) or \
+            next((e.info["mac"] for e in entries if e.info.get("mac")), None)
+        if mac is not None:
+            return mac["title"], mac["badge"], HOT, list(mac["explain"]), list(mac["advice"])
         reboot = next((e for e in entries if e.role == "reboot"), None)
         how = reboot.info.get("how") if reboot else None
         code = next((e.info["bugcheck"] for e in entries if e.info.get("bugcheck")), None)
@@ -327,13 +332,14 @@ def incident(g: Group) -> dict:
 
 
 def counts(groups: Iterable[Group]) -> dict[str, int]:
-    """摘要的數字：藍屏、沒有藍屏代碼的重開（含強制關機、睡眠失敗、過熱）、牽涉顯示卡／硬碟／硬體的事件數
+    """摘要的數字：藍屏（Mac 是核心錯誤）、沒有藍屏代碼的重開（含強制關機、睡眠失敗、過熱）、牽涉顯示卡／硬碟／硬體的事件數
     （gpuMajor：其中要特別注意的）、程式當掉的次數。"""
     out = {"bluescreen": 0, "reset": 0, GPU: 0, "gpuMajor": 0, STORAGE: 0, HARDWARE: 0, APP: 0}
     for g in groups:
         cats = {e.category for e in g.entries}
         if g.category == CRASH:
-            out["bluescreen" if any(e.info.get("bugcheck") for e in g.entries) else "reset"] += 1
+            crashed = any(e.info.get("bugcheck") or e.role == "panic" for e in g.entries)
+            out["bluescreen" if crashed else "reset"] += 1
         for cat in (GPU, STORAGE, HARDWARE):
             out[cat] += cat in cats
         out["gpuMajor"] += GPU in cats and major(g)

@@ -1,11 +1,12 @@
-// 事件記錄頁：把 Windows 的系統與應用程式記錄整理成一件件事（後端 src/hwglance/events/，GET /api/events），
+// 事件記錄頁：把 Windows 的系統與應用程式記錄（Mac 是核心錯誤報告與開機時記下的上次關機原因）整理成一件件事
+// （後端 src/hwglance/events/，GET /api/events），
 // 排查當機與硬體故障。只負責排版，內容在 features/events/。
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Segmented } from "../components/Segmented";
 import { EventSummary, Filters } from "../features/events/EventSummary";
 import { IncidentList } from "../features/events/IncidentList";
-import { matches } from "../features/events/meta";
+import { isMac, matches } from "../features/events/meta";
 import type { Filter } from "../features/events/meta";
 import { useEventReport } from "../features/events/useEvents";
 import { Notes } from "../features/status/StatusBar";
@@ -30,7 +31,11 @@ export function Events() {
           {/* 說明至少留 18rem，窄的時候範圍按鈕換到下一行，不要把說明擠成一長條 */}
           <div className="min-w-0 flex-[1_1_18rem]">
             <h2 className="m-0 text-sm font-semibold text-fg-muted">事件記錄</h2>
-            <p className="m-0 text-xs text-fg-subtle">Windows 記下的當機、硬體與程式錯誤，整理成一件件事，看得出出事前發生了什麼。</p>
+            <p className="m-0 text-xs text-fg-subtle">
+              {report && isMac(report)
+                ? "macOS 留下的核心錯誤報告，加上每次開機時記下的上次關機原因，整理成一件件事。"
+                : "Windows 記下的當機、硬體與程式錯誤，整理成一件件事，看得出出事前發生了什麼。"}
+            </p>
           </div>
           {loading && report ? <RefreshCw className="size-3.5 shrink-0 animate-spin text-fg-subtle" aria-label="讀取中" /> : null}
           <Segmented label="時間範圍" value={days} onChange={setDays} options={RANGES} />
@@ -41,17 +46,22 @@ export function Events() {
           <div className={`space-y-4 transition-opacity ${stale ? "opacity-60" : ""}`}>
             <Notes notes={report.errors} offline={error} />
             <EventSummary report={report} />
-            <Filters incidents={report.incidents} value={filter} onChange={setFilter} />
+            <Filters incidents={report.incidents} value={filter} onChange={setFilter} mac={isMac(report)} />
             <IncidentList incidents={report.incidents.filter((i) => matches(i, filter))} markers={report.markers}
               now={report.generated} collapse={filter === "all"}
-              empty={filter === "all" ? "這段期間沒有記到當機、硬體錯誤或程式當掉。" : "這段期間沒有這類事件。"} />
+              empty={filter !== "all" ? "這段期間沒有這類事件。" : isMac(report)
+                ? "這段期間沒有核心錯誤，也沒有不正常的關機。"
+                : "這段期間沒有記到當機、硬體錯誤或程式當掉。"} />
           </div>
         )}
       </main>
       {report ? (
         <footer className="px-5 pb-4 text-xs text-fg-subtle num">
-          {[report.oldest ? `系統記錄最早到 ${fullDate(report.oldest)}` : null, `整理於 ${clockTime(report.generated)}`,
-            "只讀取，不會改動 Windows 的記錄"].filter(Boolean).join("・")}
+          {(isMac(report)
+            ? [report.oldest ? `開關機記錄最早到 ${fullDate(report.oldest)}` : null, `整理於 ${clockTime(report.generated)}`,
+              "上次關機原因從 HWGlance 第一次開啟後才有", "只讀取，不會改動 macOS 的記錄"]
+            : [report.oldest ? `系統記錄最早到 ${fullDate(report.oldest)}` : null, `整理於 ${clockTime(report.generated)}`,
+              "只讀取，不會改動 Windows 的記錄"]).filter(Boolean).join("・")}
         </footer>
       ) : null}
     </>

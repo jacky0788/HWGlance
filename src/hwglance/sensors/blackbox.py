@@ -297,9 +297,12 @@ class DemoBlackBox:
     keep_days = KEEP_DAYS
     REOPEN = 120.0
 
-    def __init__(self, downs: Callable[[], list[tuple[float, float]]], clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, downs: Callable[[], list[tuple[float, float]]], clock: Callable[[], float] = time.time,
+                 source: Callable | None = None) -> None:
+        """source：哪一種示範電腦（DemoSource 或它的子類別，例如 Mac 的 MacDemo）；沒給就是 DemoSource。"""
         self._downs = downs
         self._clock = clock
+        self._source = source
 
     def read(self, start: float, end: float, *, max_points: int = MAX_POINTS,
              bands: Mapping[str, Band] | None = None) -> dict:
@@ -312,7 +315,7 @@ class DemoBlackBox:
         if hi > lo:
             step = max(INTERVAL, (hi - lo) / 900)
             clock = _Clock(lo - 300)                 # 先跑 5 分鐘，溫度才不是從預設值開始
-            demo = DemoSource(seed=int(lo) % 997, clock=clock)
+            demo = (self._source or DemoSource)(seed=int(lo) % 997, clock=clock)
             downs = self._downs()
             t = lo - 300
             while t <= hi:

@@ -340,7 +340,7 @@ export interface BlackBoxWindow {
 }
 
 export interface EventReport {
-  source: "windows" | "demo";
+  source: "windows" | "demo" | "mac" | "mac-demo"; // mac：核心錯誤報告＋開機時記下的上次關機原因（events/mac.py）
   days: number | null; // null＝全部
   since: number | null;
   oldest: number | null; // 系統記錄最早的一筆

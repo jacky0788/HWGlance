@@ -232,7 +232,12 @@ def create_app(service: SensorService, token: str | None = None,
             return JSONResponse({"detail": "這個模式沒有黑盒子"}, status_code=404)
         if not (0 < end - start <= BLACKBOX_SPAN and end <= time.time() + 86400):
             return JSONResponse({"detail": "時間範圍要在 6 小時以內"}, status_code=422)
-        return JSONResponse(blackbox.read(start, end, bands=service.bands), headers=NO_STORE)
+        # CPU 門檻沒改過時跟主畫面一樣照這台的降頻溫度算（normalize._cpu；Intel、Apple 晶片），黑盒子的「偏高」才對得上
+        bands = dict(service.bands or DEFAULTS)
+        tjmax = service.cpu_tjmax()
+        if tjmax and bands.get("cpu") == DEFAULTS["cpu"]:
+            bands["cpu"] = cpu_band(tjmax)
+        return JSONResponse(blackbox.read(start, end, bands=bands), headers=NO_STORE)
 
     @app.get("/api/status")
     def status() -> dict:
